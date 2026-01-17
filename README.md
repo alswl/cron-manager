@@ -254,7 +254,8 @@ The dashboard includes the following panels:
 ### Dashboard Variables
 
 - **Datasource**: Select your Prometheus datasource
-- **Job Name**: Filter by specific job names (supports multi-select and "All")
+- **Instance**: Filter by instance (hostname/server) - supports multi-select and "All"
+- **Job Name**: Filter by specific job names (supports multi-select and "All", filtered by selected instance)
 
 ### Importing the Dashboard
 

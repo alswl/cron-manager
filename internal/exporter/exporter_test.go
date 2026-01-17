@@ -9,6 +9,11 @@ import (
 	"github.com/spf13/afero"
 )
 
+// newTestExporter creates a new Exporter instance with test filesystem
+func newTestExporter(fs afero.Fs) *Exporter {
+	return NewExporter(WithFileSystem(fs))
+}
+
 // TestGetExporterPath tests the GetExporterPath function
 func TestGetExporterPath(t *testing.T) {
 	tests := []struct {
@@ -57,7 +62,7 @@ func TestGetExporterPath(t *testing.T) {
 			customFilename: "",
 			envVar:         "",
 			envExists:      false,
-			expectedSuffix: "/var/cache/prometheus/crons.prom",
+			expectedSuffix: "/var/lib/prometheus/node-exporter/crons.prom",
 		},
 		{
 			name:           "with empty COLLECTOR_TEXTFILE_PATH env var (should use default)",
@@ -65,7 +70,7 @@ func TestGetExporterPath(t *testing.T) {
 			customFilename: "",
 			envVar:         "",
 			envExists:      true,
-			expectedSuffix: "/var/cache/prometheus/crons.prom",
+			expectedSuffix: "/var/lib/prometheus/node-exporter/crons.prom",
 		},
 	}
 
@@ -81,25 +86,17 @@ func TestGetExporterPath(t *testing.T) {
 				}
 			}()
 
-			// Reset custom directory, filename, and metric settings
-			SetExporterDir("")
-			SetExporterFilename("")
-			SetMetricName("")
-			metricDisabled = false
-			defer func() {
-				SetExporterDir("")
-				SetExporterFilename("")
-				SetMetricName("")
-				metricDisabled = false
-			}()
-
-			// Set up test environment
+			// Build exporter options
+			var opts []Option
 			if tt.customDir != "" {
-				SetExporterDir(tt.customDir)
+				opts = append(opts, WithExporterDir(tt.customDir))
 			}
 			if tt.customFilename != "" {
-				SetExporterFilename(tt.customFilename)
+				opts = append(opts, WithExporterFilename(tt.customFilename))
 			}
+
+			// Create exporter instance
+			exp := NewExporter(opts...)
 			// First unset the env var to ensure clean state
 			_ = os.Unsetenv("COLLECTOR_TEXTFILE_PATH")
 
@@ -115,7 +112,7 @@ func TestGetExporterPath(t *testing.T) {
 			}
 
 			// Test the function
-			result := GetExporterPath()
+			result := exp.GetExporterPath()
 			if !strings.HasSuffix(result, tt.expectedSuffix) {
 				t.Errorf("GetExporterPath() = %v, want suffix %v", result, tt.expectedSuffix)
 			}
@@ -125,20 +122,17 @@ func TestGetExporterPath(t *testing.T) {
 
 // TestSetMetricName tests the SetMetricName function
 func TestSetMetricName(t *testing.T) {
-	UseTestFileSystem(afero.NewMemMapFs())
-	defer ResetFs()
+	memFs := afero.NewMemMapFs()
+	exp := NewExporter(
+		WithFileSystem(memFs),
+		WithExporterDir("/tmp/test_exporter"),
+		WithMetricName("custom_metric"),
+	)
 
-	tmpDir := "/tmp/test_exporter"
-	SetExporterDir(tmpDir)
-	defer SetExporterDir("")
+	exp.WriteToExporter("test_job", "run", "1")
 
-	SetMetricName("custom_metric")
-	defer SetMetricName("")
-
-	WriteToExporter("test_job", "run", "1")
-
-	exporterPath := GetExporterPath()
-	content, err := afero.ReadFile(fs, exporterPath)
+	exporterPath := exp.GetExporterPath()
+	content, err := afero.ReadFile(memFs, exporterPath)
 	if err != nil {
 		t.Fatalf("Failed to read exporter file: %v", err)
 	}
@@ -154,22 +148,19 @@ func TestSetMetricName(t *testing.T) {
 
 // TestDisableMetric tests the DisableMetric function
 func TestDisableMetric(t *testing.T) {
-	UseTestFileSystem(afero.NewMemMapFs())
-	defer ResetFs()
+	memFs := afero.NewMemMapFs()
+	exp := NewExporter(
+		WithFileSystem(memFs),
+		WithExporterDir("/tmp/test_exporter"),
+		WithMetricDisabled(true),
+	)
 
-	tmpDir := "/tmp/test_exporter"
-	SetExporterDir(tmpDir)
-	defer SetExporterDir("")
+	exp.WriteToExporter("test_job", "run", "1")
 
-	DisableMetric()
-	defer func() { metricDisabled = false }()
-
-	WriteToExporter("test_job", "run", "1")
-
-	exporterPath := GetExporterPath()
-	exists, _ := afero.Exists(fs, exporterPath)
+	exporterPath := exp.GetExporterPath()
+	exists, _ := afero.Exists(memFs, exporterPath)
 	if exists {
-		content, _ := afero.ReadFile(fs, exporterPath)
+		content, _ := afero.ReadFile(memFs, exporterPath)
 		if len(content) > 0 {
 			t.Errorf("Metric writing should be disabled, but file contains: %s", string(content))
 		}
@@ -180,8 +171,7 @@ func TestDisableMetric(t *testing.T) {
 func TestWriteToExporter(t *testing.T) {
 	// Use in-memory filesystem for testing
 	memFs := afero.NewMemMapFs()
-	UseTestFileSystem(memFs)
-	defer ResetFs()
+	exp := newTestExporter(memFs)
 
 	// Use virtual path for testing
 	tmpDir := "/test/path"
@@ -273,7 +263,7 @@ crontab{name="test_job",dimension="run"} 1
 			}
 
 			// Call the function
-			WriteToExporter(tt.jobName, tt.label, tt.metric)
+			exp.WriteToExporter(tt.jobName, tt.label, tt.metric)
 
 			// Read and verify the result
 			content, err := afero.ReadFile(memFs, exporterPath)
@@ -323,8 +313,7 @@ crontab{name="test_job",dimension="run"} 1
 func TestWriteToExporterFileCreation(t *testing.T) {
 	// Use in-memory filesystem for testing
 	memFs := afero.NewMemMapFs()
-	UseTestFileSystem(memFs)
-	defer ResetFs()
+	exp := newTestExporter(memFs)
 
 	// Use virtual path for testing
 	tmpDir := "/test/path"
@@ -340,7 +329,7 @@ func TestWriteToExporterFileCreation(t *testing.T) {
 	}
 
 	// Call the function
-	WriteToExporter("test_job", "run", "1")
+	exp.WriteToExporter("test_job", "run", "1")
 
 	// Verify file was created
 	exists, err := afero.Exists(memFs, exporterPath)
@@ -367,8 +356,7 @@ func TestWriteToExporterFileCreation(t *testing.T) {
 func TestWriteToExporterConcurrentWrites(t *testing.T) {
 	// Use in-memory filesystem for testing
 	memFs := afero.NewMemMapFs()
-	UseTestFileSystem(memFs)
-	defer ResetFs()
+	exp := newTestExporter(memFs)
 
 	// Use virtual path for testing
 	tmpDir := "/test/path"
@@ -381,9 +369,9 @@ func TestWriteToExporterConcurrentWrites(t *testing.T) {
 	done := make(chan bool, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
-			WriteToExporter("test_job", "run", "1")
-			WriteToExporter("test_job", "failed", "0")
-			WriteToExporter("test_job", "duration", "100")
+			exp.WriteToExporter("test_job", "run", "1")
+			exp.WriteToExporter("test_job", "failed", "0")
+			exp.WriteToExporter("test_job", "duration", "100")
 			done <- true
 		}()
 	}
@@ -409,8 +397,7 @@ func TestWriteToExporterConcurrentWrites(t *testing.T) {
 func TestWriteToExporterRegexMatching(t *testing.T) {
 	// Use in-memory filesystem for testing
 	memFs := afero.NewMemMapFs()
-	UseTestFileSystem(memFs)
-	defer ResetFs()
+	exp := newTestExporter(memFs)
 
 	// Use virtual path for testing
 	tmpDir := "/test/path"
@@ -421,7 +408,7 @@ func TestWriteToExporterRegexMatching(t *testing.T) {
 
 	// Test with special characters in job name
 	specialJobName := "test-job_with.special_chars"
-	WriteToExporter(specialJobName, "run", "1")
+	exp.WriteToExporter(specialJobName, "run", "1")
 
 	content, err := afero.ReadFile(memFs, exporterPath)
 	if err != nil {
@@ -439,8 +426,7 @@ func TestWriteToExporterRegexMatching(t *testing.T) {
 func TestWriteToExporterMultipleJobs(t *testing.T) {
 	// Use in-memory filesystem for testing
 	memFs := afero.NewMemMapFs()
-	UseTestFileSystem(memFs)
-	defer ResetFs()
+	exp := newTestExporter(memFs)
 
 	// Use virtual path for testing
 	tmpDir := "/test/path"
@@ -450,10 +436,10 @@ func TestWriteToExporterMultipleJobs(t *testing.T) {
 	defer func() { _ = os.Unsetenv("COLLECTOR_TEXTFILE_PATH") }()
 
 	// Write metrics for multiple jobs
-	WriteToExporter("job1", "run", "1")
-	WriteToExporter("job2", "run", "1")
-	WriteToExporter("job1", "failed", "0")
-	WriteToExporter("job2", "failed", "0")
+	exp.WriteToExporter("job1", "run", "1")
+	exp.WriteToExporter("job2", "run", "1")
+	exp.WriteToExporter("job1", "failed", "0")
+	exp.WriteToExporter("job2", "failed", "0")
 
 	content, err := afero.ReadFile(memFs, exporterPath)
 	if err != nil {

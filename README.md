@@ -5,12 +5,14 @@ cron-manager is a Go tool for wrapping and monitoring cron jobs, publishing metr
 ## Features
 
 - Execute cron job commands and monitor their status
-- Measure job execution time
-- Detect job failures and timeouts
+- Measure job execution time with high precision (floating point seconds)
+- Detect job failures and track exit codes
 - Publish monitoring metrics via Prometheus TextFile Collector
 - Support custom metrics file path
 - Support job output logging
 - Support idle wait mode (for Prometheus to detect job running status)
+- Counter metrics for job execution statistics (success/failed counts)
+- Prometheus best practices: separate metric names, HELP comments, proper label escaping
 
 ## Installation
 
@@ -75,7 +77,7 @@ cronmanager -n "update_cron" -- /usr/bin/php /var/www/app/console broadcast:enti
 | `-n` | `--name` | Job name (will appear in alerts) | ✅ | - |
 | `-l` | `--log` | Log file path | ❌ | None (output will be discarded) |
 | `-i` | `--idle` | Idle wait duration in seconds (ensures job runs for at least this duration for Prometheus detection) | ❌ | 0 (disabled) |
-| `-d` | `--dir` | Directory for Prometheus exporter file | ❌ | `/var/cache/prometheus` or `COLLECTOR_TEXTFILE_PATH` env var |
+| `-d` | `--dir` | Directory for Prometheus exporter file | ❌ | `/var/lib/prometheus/node-exporter` or `COLLECTOR_TEXTFILE_PATH` env var |
 | - | `--textfile` | Filename for Prometheus exporter file | ❌ | `crons.prom` |
 | - | `--metric` | Metric name for Prometheus metrics | ❌ | `crontab` |
 | - | `--no-metric` | Disable metric writing to Prometheus exporter file | ❌ | false |
@@ -98,7 +100,7 @@ Ensure Prometheus Node Exporter is installed and configured with TextFile Collec
 ```bash
 node_exporter \
   --collector.textfile \
-  --collector.textfile.directory=/var/cache/prometheus
+  --collector.textfile.directory=/var/lib/prometheus/node-exporter
 ```
 
 ### Custom Metrics File Path
@@ -117,7 +119,7 @@ export COLLECTOR_TEXTFILE_PATH=/custom/path/to/directory
 cronmanager --name job_cron -- command
 ```
 
-3. **Default path** (lowest priority): `/var/cache/prometheus`
+3. **Default path** (lowest priority): `/var/lib/prometheus/node-exporter`
 
 **Filename**:
 - Use `--textfile` to specify a custom filename (default: `crons.prom`):
@@ -148,25 +150,84 @@ Ensure the user running cron-manager has write permissions to the metrics file d
 
 ## Monitoring Metrics
 
-cron-manager generates Prometheus-format metric files with the following dimensions:
+cron-manager generates Prometheus-format metric files following best practices with separate metric names and proper types.
 
-| Dimension | Description | Values |
-|-----------|-------------|--------|
-| `failed` | Whether the job failed | 1 = failed, 0 = success |
-| `delayed` | Whether the job timed out | 1 = timeout, 0 = normal |
-| `duration` | Job execution duration (seconds) | Numeric value |
-| `run` | Whether the job is running | 1 = running, 0 = finished |
-| `last` | Last update timestamp | Unix timestamp |
+### Gauge Metrics
+
+Gauge metrics represent the current state of a job:
+
+| Metric Name | Type | Description | Values |
+|-------------|------|-------------|--------|
+| `{prefix}_failed` | gauge | Whether the job failed | 1 = failed, 0 = success |
+| `{prefix}_exit_code` | gauge | Exit code of the last job execution | Numeric exit code (0 = success) |
+| `{prefix}_duration_seconds` | gauge | Duration of the last job execution | Floating point seconds (e.g., 10.25) |
+| `{prefix}_running` | gauge | Whether the job is currently running | 1 = running, 0 = finished |
+| `{prefix}_last_run_timestamp_seconds` | gauge | Timestamp of the last job execution | Unix timestamp |
+
+Where `{prefix}` is the metric name prefix (default: `crontab`, customizable via `--metric` flag).
+
+### Counter Metrics
+
+Counter metrics track cumulative statistics:
+
+| Metric Name | Type | Description |
+|-------------|------|-------------|
+| `{prefix}_runs_total` | counter | Total number of job runs with status label |
+
+The `runs_total` counter includes a `status` label with values:
+- `status="started"` - Job execution started
+- `status="success"` - Job completed successfully
+- `status="failed"` - Job failed with non-zero exit code
 
 ### Metric Example
 
 ```prometheus
-# TYPE crontab gauge
-crontab{name="task_cron",dimension="failed"} 0
-crontab{name="task_cron",dimension="delayed"} 0
-crontab{name="task_cron",dimension="duration"} 10
-crontab{name="task_cron",dimension="run"} 0
-crontab{name="task_cron",dimension="last"} 1704067200
+# HELP crontab_failed Whether the job failed (1 = failed, 0 = success)
+# TYPE crontab_failed gauge
+crontab_failed{name="task_cron"} 0
+
+# HELP crontab_exit_code Exit code of the last job execution
+# TYPE crontab_exit_code gauge
+crontab_exit_code{name="task_cron"} 0
+
+# HELP crontab_duration_seconds Duration of the last job execution in seconds
+# TYPE crontab_duration_seconds gauge
+crontab_duration_seconds{name="task_cron"} 10.25
+
+# HELP crontab_running Whether the job is currently running (1 = running, 0 = finished)
+# TYPE crontab_running gauge
+crontab_running{name="task_cron"} 0
+
+# HELP crontab_last_run_timestamp_seconds Timestamp of the last job execution
+# TYPE crontab_last_run_timestamp_seconds gauge
+crontab_last_run_timestamp_seconds{name="task_cron"} 1704067200
+
+# HELP crontab_runs_total Total number of job runs
+# TYPE crontab_runs_total counter
+crontab_runs_total{name="task_cron",status="success"} 100
+crontab_runs_total{name="task_cron",status="failed"} 5
+crontab_runs_total{name="task_cron",status="started"} 105
+```
+
+### Querying Metrics
+
+With the new metric design, queries are more intuitive:
+
+```promql
+# Check if any job is currently running
+crontab_running == 1
+
+# Get success rate
+rate(crontab_runs_total{status="success"}[5m]) / rate(crontab_runs_total[5m])
+
+# Get average duration
+avg(crontab_duration_seconds)
+
+# Alert on job failures
+crontab_failed == 1
+
+# Get jobs with non-zero exit codes
+crontab_exit_code != 0
 ```
 
 ## License

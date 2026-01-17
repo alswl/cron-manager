@@ -58,7 +58,7 @@ func main() {
 	jobnamePtr := pflag.StringP("name", "n", "", "Job name (required, will appear in alerts)")
 	logfilePtr := pflag.StringP("log", "l", "", "Log file path to store the cron job output")
 	idleSeconds := pflag.IntP("idle", "i", 0, "Idle wait duration in seconds (0 = disabled). Ensures job runs for at least this duration for Prometheus detection")
-	exporterDirPtr := pflag.StringP("dir", "d", "", "Directory for Prometheus exporter file (default: /var/cache/prometheus or COLLECTOR_TEXTFILE_PATH env var)")
+	exporterDirPtr := pflag.StringP("dir", "d", "", "Directory for Prometheus exporter file (default: /var/lib/prometheus/node-exporter or COLLECTOR_TEXTFILE_PATH env var)")
 	textfilePtr := pflag.String("textfile", "crons.prom", "Filename for Prometheus exporter file")
 	metricNamePtr := pflag.String("metric", "crontab", "Metric name for Prometheus metrics")
 	noMetricPtr := pflag.Bool("no-metric", false, "Disable metric writing to Prometheus exporter file")
@@ -100,23 +100,23 @@ For more information, visit: https://github.com/alswl/cron-manager
 		os.Exit(1)
 	}
 
-	// Set custom exporter directory if provided
+	// Build exporter options
+	var opts []exporter.Option
 	if *exporterDirPtr != "" {
-		exporter.SetExporterDir(*exporterDirPtr)
+		opts = append(opts, exporter.WithExporterDir(*exporterDirPtr))
 	}
-
-	// Set custom exporter filename (always set, as it has a default value)
-	exporter.SetExporterFilename(*textfilePtr)
-
-	// Set custom metric name if provided
+	if *textfilePtr != "" {
+		opts = append(opts, exporter.WithExporterFilename(*textfilePtr))
+	}
 	if *metricNamePtr != "" {
-		exporter.SetMetricName(*metricNamePtr)
+		opts = append(opts, exporter.WithMetricName(*metricNamePtr))
+	}
+	if *noMetricPtr {
+		opts = append(opts, exporter.WithMetricDisabled(true))
 	}
 
-	// Disable metric writing if requested
-	if *noMetricPtr {
-		exporter.DisableMetric()
-	}
+	// Create exporter instance with options
+	exp := exporter.NewExporter(opts...)
 
 	// Parse command and arguments from -- separator
 	// Note: pflag.Parse() stops parsing flags when it encounters "--",
@@ -153,15 +153,16 @@ For more information, visit: https://github.com/alswl/cron-manager
 	go func() {
 		for range time.Tick(time.Second) {
 			jobDuration := time.Since(jobStartTime).Seconds()
-			// Log current duration counter
-			exporter.WriteToExporter(*jobnamePtr, "duration", strconv.FormatFloat(jobDuration, 'f', 0, 64))
+			// Log current duration with 2 decimal precision
+			exp.WriteGauge("duration_seconds", *jobnamePtr, strconv.FormatFloat(jobDuration, 'f', 2, 64), "Duration of the last job execution in seconds")
 			// Store last timestamp
-			exporter.WriteToExporter(*jobnamePtr, "last", fmt.Sprintf("%d", time.Now().Unix()))
+			exp.WriteGauge("last_run_timestamp_seconds", *jobnamePtr, fmt.Sprintf("%d", time.Now().Unix()), "Timestamp of the last job execution")
 		}
 	}()
 
-	// Job started
-	exporter.WriteToExporter(*jobnamePtr, "run", "1")
+	// Job started - increment run counter and set running status
+	exp.IncrementCounter("runs_total", *jobnamePtr, map[string]string{"status": "started"}, "Total number of job runs")
+	exp.WriteGauge("running", *jobnamePtr, "1", "Whether the job is currently running (1 = running, 0 = finished)")
 
 	// Execute the command with arguments
 	cmd := exec.Command(cmdBin, cmdArgsOnly...)
@@ -203,24 +204,33 @@ For more information, visit: https://github.com/alswl/cron-manager
 		job.IdleWait(jobStartTime, *idleSeconds)
 	}
 
+	// Calculate final duration
+	finalDuration := time.Since(jobStartTime).Seconds()
+
 	if err != nil {
 		if exiterr, ok := err.(*exec.ExitError); ok {
-			if _, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-				exporter.WriteToExporter(*jobnamePtr, "failed", "1")
-				// Job is no longer running
-				exporter.WriteToExporter(*jobnamePtr, "run", "0")
+			if waitStatus, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+				exitCode := waitStatus.ExitStatus()
+				// Job failed
+				exp.WriteGauge("failed", *jobnamePtr, "1", "Whether the job failed (1 = failed, 0 = success)")
+				exp.WriteGauge("exit_code", *jobnamePtr, strconv.Itoa(exitCode), "Exit code of the last job execution")
+				// Increment failed counter
+				exp.IncrementCounter("runs_total", *jobnamePtr, map[string]string{"status": "failed"}, "Total number of job runs")
 			}
 		} else {
 			log.Fatalf("cmd.Wait: %v", err)
 		}
 	} else {
-		// The job had no errors
-		exporter.WriteToExporter(*jobnamePtr, "failed", "0")
-		// Job is no longer running
-		exporter.WriteToExporter(*jobnamePtr, "run", "0")
-		// In all cases, unlock the file
+		// The job succeeded
+		exp.WriteGauge("failed", *jobnamePtr, "0", "Whether the job failed (1 = failed, 0 = success)")
+		exp.WriteGauge("exit_code", *jobnamePtr, "0", "Exit code of the last job execution")
+		// Increment success counter
+		exp.IncrementCounter("runs_total", *jobnamePtr, map[string]string{"status": "success"}, "Total number of job runs")
 	}
 
-	// Store last timestamp
-	exporter.WriteToExporter(*jobnamePtr, "last", fmt.Sprintf("%d", time.Now().Unix()))
+	// Job is no longer running
+	exp.WriteGauge("running", *jobnamePtr, "0", "Whether the job is currently running (1 = running, 0 = finished)")
+	// Store final duration and last timestamp
+	exp.WriteGauge("duration_seconds", *jobnamePtr, strconv.FormatFloat(finalDuration, 'f', 2, 64), "Duration of the last job execution in seconds")
+	exp.WriteGauge("last_run_timestamp_seconds", *jobnamePtr, fmt.Sprintf("%d", time.Now().Unix()), "Timestamp of the last job execution")
 }

@@ -1,7 +1,7 @@
 package fslock
 
 import (
-	"github.com/juju/fslock"
+	"github.com/gofrs/flock"
 )
 
 // Locker is the file locking interface
@@ -12,11 +12,19 @@ type Locker interface {
 
 // fsLocker uses real file system locking
 type fsLocker struct {
-	lock *fslock.Lock
+	lock *flock.Flock
 }
 
 func (f *fsLocker) Lock() error {
-	return f.lock.Lock()
+	_, err := f.lock.TryLock()
+	if err != nil {
+		return err
+	}
+	// If TryLock fails to acquire, use blocking Lock
+	if !f.lock.Locked() {
+		return f.lock.Lock()
+	}
+	return nil
 }
 
 func (f *fsLocker) Unlock() error {
@@ -26,7 +34,7 @@ func (f *fsLocker) Unlock() error {
 // NewLocker creates a locker. osLock true uses file system lock, false uses memory lock (for testing)
 func NewLocker(path string, osLock bool) Locker {
 	if osLock {
-		return &fsLocker{lock: fslock.New(path)}
+		return &fsLocker{lock: flock.New(path + ".lock")}
 	}
 	return newMemLocker(path)
 }

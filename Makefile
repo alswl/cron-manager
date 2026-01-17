@@ -31,7 +31,7 @@ IMAGE_PREFIX ?= $(strip )
 IMAGE_SUFFIX ?= $(strip )
 
 # This repo's root import path (under GOPATH).
-ROOT := github.com/abohmeed/cronmanager
+ROOT := github.com/alswl/cron-manager
 
 # Project main package location (can be multiple ones).
 CMD_DIR := ./cmd
@@ -60,7 +60,7 @@ VERSION_IN_FILE = $(shell cat VERSION)
 VERSION ?= v$(VERSION_IN_FILE)-$(BUILD_VERSION)
 
 
-UT_COVER_PACKAGES := $(shell go list ./pkg/... | grep -Ev 'pkg/clientsets|pkg/dal|pkg/models|pkg/version|pkg/injector')
+UT_COVER_PACKAGES := $(shell go list ./internal/... | grep -Ev 'internal/clientsets|internal/dal|internal/models|internal/version|internal/injector')
 
 .PHONY: all
 all: fmt test build

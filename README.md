@@ -31,35 +31,43 @@ sudo mv ./bin/cronmanager /usr/local/bin/
 ### Basic Usage
 
 ```bash
-cronmanager -c "command" -n "job_name" [options]
+cronmanager -n "job_name" [options] -- command [args...]
 ```
 
 ### Examples
 
 ```bash
 # Execute PHP script
-cronmanager -c "/usr/bin/php /var/www/app/console task:run" -n "task_cron"
+cronmanager -n "task_cron" -- /usr/bin/php /var/www/app/console task:run
 
 # Execute Python script with logging
-cronmanager -c "/usr/bin/python3 /path/to/script.py" -n "script_cron" -l /var/log/cron.log
+cronmanager -n "script_cron" -l /var/log/cron.log -- /usr/bin/python3 /path/to/script.py
 
-# Enable idle wait mode
-cronmanager -c "/usr/bin/command" -n "job_cron" -i
+# Enable idle wait mode (wait at least 60 seconds)
+cronmanager -n "job_cron" -i 60 -- /usr/bin/command arg1 arg2
+
+# Custom idle wait duration (wait at least 120 seconds)
+cronmanager -n "job_cron" -i 120 -- /usr/bin/command arg1 arg2
+
+# Command with complex arguments (no need to escape)
+cronmanager -n "update_cron" -- /usr/bin/php /var/www/app/console broadcast:entities:updated -e project -l 20000
 ```
 
 ### Command Line Options
 
 | Option | Description | Required | Default |
 |--------|-------------|----------|---------|
-| `-c` | Command to execute (executable path with arguments) | ✅ | - |
 | `-n` | Job name (will appear in alerts) | ✅ | "Generic" |
 | `-l` | Log file path | ❌ | None (output will be discarded) |
-| `-i` | Enable idle wait (wait up to 60 seconds for Prometheus detection) | ❌ | false |
+| `-i` | Idle wait duration in seconds (ensures job runs for at least this duration for Prometheus detection) | ❌ | 0 (disabled) |
 | `-version` | Display version information and exit | ❌ | - |
+| `--` | Separator before command and its arguments | ✅ | - |
 
 ### Notes
 
-- The `-c` parameter must be an executable file path; shell built-ins or pipe operations are not supported
+- The command and its arguments must be placed after the `--` separator
+- This syntax allows you to use commands with complex arguments without escaping
+- The command must be an executable file path; shell built-ins or pipe operations are not supported
 - It's recommended to append `_cron` suffix to job names for easier identification in Prometheus/Grafana
 
 ## Configuration

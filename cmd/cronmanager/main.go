@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -23,11 +22,41 @@ var (
 	flgVersion bool
 )
 
+// extractCommandAfterSeparator extracts the command and its arguments from args
+// after the "--" separator. It returns the command path, its arguments, and an error
+// if the separator is missing or no command is provided after the separator.
+func extractCommandAfterSeparator(args []string) (command string, arguments []string, err error) {
+	const separator = "--"
+
+	// Find the separator index
+	separatorIndex := -1
+	for i, arg := range args {
+		if arg == separator {
+			separatorIndex = i
+			break
+		}
+	}
+
+	if separatorIndex == -1 {
+		return "", nil, fmt.Errorf("command separator '%s' not found", separator)
+	}
+
+	// Extract command and arguments after the separator
+	commandArgs := args[separatorIndex+1:]
+	if len(commandArgs) == 0 {
+		return "", nil, fmt.Errorf("command is required after '%s' separator", separator)
+	}
+
+	// First element is the command, rest are arguments
+	command = commandArgs[0]
+	arguments = commandArgs[1:]
+	return command, arguments, nil
+}
+
 func main() {
-	idle := flag.Bool("i", false, fmt.Sprintf("Idle for %d seconds at the beginning so Prometheus can notice it's actually running", job.IdleForSeconds))
-	cmdPtr := flag.String("c", "", "[Required] The `cron job` command")
 	jobnamePtr := flag.String("n", "", "[Required] The `job name` to appear in the alarm")
 	logfilePtr := flag.String("l", "", "[Optional] The `log file` to store the cron output")
+	idleSeconds := flag.Int("i", 0, "Idle for specified seconds (default: 0, disabled). If set, will wait to ensure the job runs for at least this duration so Prometheus can detect it")
 	flag.BoolVar(&flgVersion, "version", false, "if true print version and exit")
 	flag.Parse()
 	if flgVersion {
@@ -35,10 +64,42 @@ func main() {
 		os.Exit(0)
 	}
 	flag.Usage = func() {
-		fmt.Printf("Usage: cronmanager -c command  -n jobname  [ -l log file ]\nExample: cronmanager \"/usr/bin/php /var/www/app.zlien.com/console broadcast:entities:updated -e project -l 20000\" -n update_entitites_cron -t 3600 -l /path/to/log\n")
+		fmt.Printf(`Usage: cronmanager -n jobname [options] -- command [args...]
+Example: cronmanager -n update_entities_cron -l /path/to/log -- /usr/bin/php /var/www/app/console broadcast:entities:updated -e project -l 20000
+`)
 		flag.PrintDefaults()
 	}
-	if *cmdPtr == "" || *jobnamePtr == "" {
+
+	if *jobnamePtr == "" {
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	// Parse command and arguments from -- separator
+	// Note: flag.Parse() stops parsing flags when it encounters "--",
+	// so flag.Args() returns all arguments after "--" (without "--" itself)
+	// We need to check os.Args to verify "--" was provided, then use flag.Args()
+	// which contains everything after "--"
+	hasSeparator := false
+	for _, arg := range os.Args {
+		if arg == "--" {
+			hasSeparator = true
+			break
+		}
+	}
+
+	if !hasSeparator {
+		fmt.Fprintf(os.Stderr, "Error: command separator '--' not found\n")
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	// flag.Args() contains all arguments after "--", so we can treat them as command args
+	// We need to reconstruct the full args list with "--" to use extractCommandAfterSeparator
+	args := append([]string{"--"}, flag.Args()...)
+	cmdBin, cmdArgsOnly, err := extractCommandAfterSeparator(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -59,11 +120,8 @@ func main() {
 	// Job started
 	exporter.WriteToExporter(*jobnamePtr, "run", "1")
 
-	// Parse the command by extracting the first token as the command and the rest as its args
-	cmdArr := strings.Split(*cmdPtr, " ")
-	cmdBin := cmdArr[0]
-	cmdArgs := cmdArr[1:]
-	cmd := exec.Command(cmdBin, cmdArgs...)
+	// Execute the command with arguments
+	cmd := exec.Command(cmdBin, cmdArgsOnly...)
 
 	var buf bytes.Buffer
 
@@ -88,7 +146,8 @@ func main() {
 	} else {
 		cmd.Stdout = &buf
 	}
-	err := cmd.Start()
+
+	err = cmd.Start()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -97,8 +156,8 @@ func main() {
 	err = cmd.Wait()
 
 	// wait if idle is active
-	if *idle {
-		job.IdleWait(jobStartTime)
+	if *idleSeconds > 0 {
+		job.IdleWait(jobStartTime, *idleSeconds)
 	}
 
 	if err != nil {

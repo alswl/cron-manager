@@ -51,17 +51,14 @@ COMMIT := $(if $(COMMIT),$(COMMIT), $${COMMIT})
 COMMIT := $(if $(COMMIT),$(COMMIT),"Unknown")
 
 ## Current version of the project.
-MAJOR_VERSION = 0
-MINOR_VERSION = 0
-PATCH_VERSION = 0
 BUILD_VERSION = $(COMMIT)
 GO_MOD_VERSION = $(shell cat go.mod | sha256sum | cut -c-6)
 GOOS = $(shell go env GOOS)
 GOARCH = $(shell go env GOARCH)
-VERSION ?= v$(MAJOR_VERSION).$(MINOR_VERSION).$(PATCH_VERSION)-$(BUILD_VERSION)
-
 # Current version of the project.
 VERSION_IN_FILE = $(shell cat VERSION)
+VERSION ?= v$(VERSION_IN_FILE)-$(BUILD_VERSION)
+
 
 UT_COVER_PACKAGES := $(shell go list ./pkg/... | grep -Ev 'pkg/clientsets|pkg/dal|pkg/models|pkg/version|pkg/injector')
 

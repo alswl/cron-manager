@@ -1,10 +1,11 @@
-module github.com/abohmeed/cronmanager
+module github.com/alswl/cron-manager
 
 go 1.25
 
 require (
 	github.com/juju/fslock v0.0.0-20160525022230-4d5c94c67b4b
 	github.com/spf13/afero v1.15.0
+	github.com/spf13/pflag v1.0.10
 )
 
 require (

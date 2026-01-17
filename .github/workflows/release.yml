@@ -33,7 +33,7 @@ jobs:
       env:
         VERSION: ${{ steps.get_version.outputs.version }}
         COMMIT: ${{ github.sha }}
-        ROOT: github.com/abohmeed/cronmanager
+        ROOT: github.com/alswl/cron-manager
       run: |
         mkdir -p dist
         

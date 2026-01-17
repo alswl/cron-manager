@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -13,9 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/abohmeed/cronmanager/pkg/exporter"
-	"github.com/abohmeed/cronmanager/pkg/job"
-	"github.com/abohmeed/cronmanager/pkg/version"
+	"github.com/alswl/cron-manager/internal/exporter"
+	"github.com/alswl/cron-manager/internal/job"
+	"github.com/alswl/cron-manager/internal/version"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -54,26 +54,49 @@ func extractCommandAfterSeparator(args []string) (command string, arguments []st
 }
 
 func main() {
-	jobnamePtr := flag.String("n", "", "[Required] The `job name` to appear in the alarm")
-	logfilePtr := flag.String("l", "", "[Optional] The `log file` to store the cron output")
-	idleSeconds := flag.Int("i", 0, "Idle for specified seconds (default: 0, disabled). If set, will wait to ensure the job runs for at least this duration so Prometheus can detect it")
-	exporterDirPtr := flag.String("d", "", "[Optional] Directory for Prometheus exporter file (default: /var/cache/prometheus or COLLECTOR_TEXTFILE_PATH env var)")
-	textfilePtr := flag.String("textfile", "", "[Optional] Filename for Prometheus exporter file (default: crons.prom)")
-	flag.BoolVar(&flgVersion, "version", false, "if true print version and exit")
-	flag.Parse()
+	// Define flags with both short and long options
+	jobnamePtr := pflag.StringP("name", "n", "", "Job name (required, will appear in alerts)")
+	logfilePtr := pflag.StringP("log", "l", "", "Log file path to store the cron job output")
+	idleSeconds := pflag.IntP("idle", "i", 0, "Idle wait duration in seconds (0 = disabled). Ensures job runs for at least this duration for Prometheus detection")
+	exporterDirPtr := pflag.StringP("dir", "d", "", "Directory for Prometheus exporter file (default: /var/cache/prometheus or COLLECTOR_TEXTFILE_PATH env var)")
+	textfilePtr := pflag.String("textfile", "crons.prom", "Filename for Prometheus exporter file")
+	metricNamePtr := pflag.String("metric", "crontab", "Metric name for Prometheus metrics")
+	noMetricPtr := pflag.Bool("no-metric", false, "Disable metric writing to Prometheus exporter file")
+	pflag.BoolVarP(&flgVersion, "version", "v", false, "Display version information and exit")
+
+	// Set usage function
+	pflag.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Usage: cronmanager --name <jobname> [options] -- <command> [args...]
+
+Execute and monitor a cron job, publishing metrics to Prometheus.
+
+Options:
+`)
+		pflag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, `
+Examples:
+  cronmanager --name update_entities_cron -- /usr/bin/php /var/www/app/console task:run
+  cronmanager -n job_cron --log /var/log/cron.log -- /usr/bin/python3 script.py
+  cronmanager -n job_cron --idle 60 --metric my_metric -- /usr/bin/command arg1 arg2
+  cronmanager -n job_cron --no-metric -- /usr/bin/command
+
+For more information, visit: https://github.com/alswl/cron-manager
+`)
+	}
+
+	// Sort flags for better help output
+	pflag.CommandLine.SortFlags = false
+
+	pflag.Parse()
+
 	if flgVersion {
 		fmt.Println("CronManager version " + version.Version)
 		os.Exit(0)
 	}
-	flag.Usage = func() {
-		fmt.Printf(`Usage: cronmanager -n jobname [options] -- command [args...]
-Example: cronmanager -n update_entities_cron -l /path/to/log -- /usr/bin/php /var/www/app/console broadcast:entities:updated -e project -l 20000
-`)
-		flag.PrintDefaults()
-	}
 
 	if *jobnamePtr == "" {
-		flag.Usage()
+		fmt.Fprintf(os.Stderr, "Error: --name is required\n\n")
+		pflag.Usage()
 		os.Exit(1)
 	}
 
@@ -82,15 +105,23 @@ Example: cronmanager -n update_entities_cron -l /path/to/log -- /usr/bin/php /va
 		exporter.SetExporterDir(*exporterDirPtr)
 	}
 
-	// Set custom exporter filename if provided
-	if *textfilePtr != "" {
-		exporter.SetExporterFilename(*textfilePtr)
+	// Set custom exporter filename (always set, as it has a default value)
+	exporter.SetExporterFilename(*textfilePtr)
+
+	// Set custom metric name if provided
+	if *metricNamePtr != "" {
+		exporter.SetMetricName(*metricNamePtr)
+	}
+
+	// Disable metric writing if requested
+	if *noMetricPtr {
+		exporter.DisableMetric()
 	}
 
 	// Parse command and arguments from -- separator
-	// Note: flag.Parse() stops parsing flags when it encounters "--",
-	// so flag.Args() returns all arguments after "--" (without "--" itself)
-	// We need to check os.Args to verify "--" was provided, then use flag.Args()
+	// Note: pflag.Parse() stops parsing flags when it encounters "--",
+	// so pflag.Args() returns all arguments after "--" (without "--" itself)
+	// We need to check os.Args to verify "--" was provided, then use pflag.Args()
 	// which contains everything after "--"
 	hasSeparator := false
 	for _, arg := range os.Args {
@@ -101,18 +132,18 @@ Example: cronmanager -n update_entities_cron -l /path/to/log -- /usr/bin/php /va
 	}
 
 	if !hasSeparator {
-		fmt.Fprintf(os.Stderr, "Error: command separator '--' not found\n")
-		flag.Usage()
+		fmt.Fprintf(os.Stderr, "Error: command separator '--' not found\n\n")
+		pflag.Usage()
 		os.Exit(1)
 	}
 
-	// flag.Args() contains all arguments after "--", so we can treat them as command args
+	// pflag.Args() contains all arguments after "--", so we can treat them as command args
 	// We need to reconstruct the full args list with "--" to use extractCommandAfterSeparator
-	args := append([]string{"--"}, flag.Args()...)
+	args := append([]string{"--"}, pflag.Args()...)
 	cmdBin, cmdArgsOnly, err := extractCommandAfterSeparator(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		flag.Usage()
+		fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
+		pflag.Usage()
 		os.Exit(1)
 	}
 

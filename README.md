@@ -55,6 +55,12 @@ cronmanager -n "job_cron" --textfile my-metrics.prom -- /usr/bin/command
 # Use custom directory and filename
 cronmanager -n "job_cron" -d /tmp/prometheus --textfile custom.prom -- /usr/bin/command
 
+# Use custom metric name
+cronmanager -n "job_cron" --metric my_cron_metric -- /usr/bin/command
+
+# Disable metric writing
+cronmanager -n "job_cron" --no-metric -- /usr/bin/command
+
 # Custom idle wait duration (wait at least 120 seconds)
 cronmanager -n "job_cron" -i 120 -- /usr/bin/command arg1 arg2
 
@@ -64,15 +70,17 @@ cronmanager -n "update_cron" -- /usr/bin/php /var/www/app/console broadcast:enti
 
 ### Command Line Options
 
-| Option | Description | Required | Default |
-|--------|-------------|----------|---------|
-| `-n` | Job name (will appear in alerts) | ✅ | "Generic" |
-| `-l` | Log file path | ❌ | None (output will be discarded) |
-| `-i` | Idle wait duration in seconds (ensures job runs for at least this duration for Prometheus detection) | ❌ | 0 (disabled) |
-| `-d` | Directory for Prometheus exporter file | ❌ | `/var/cache/prometheus` or `COLLECTOR_TEXTFILE_PATH` env var |
-| `--textfile` | Filename for Prometheus exporter file | ❌ | `crons.prom` |
-| `-version` | Display version information and exit | ❌ | - |
-| `--` | Separator before command and its arguments | ✅ | - |
+| Short | Long | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `-n` | `--name` | Job name (will appear in alerts) | ✅ | - |
+| `-l` | `--log` | Log file path | ❌ | None (output will be discarded) |
+| `-i` | `--idle` | Idle wait duration in seconds (ensures job runs for at least this duration for Prometheus detection) | ❌ | 0 (disabled) |
+| `-d` | `--dir` | Directory for Prometheus exporter file | ❌ | `/var/cache/prometheus` or `COLLECTOR_TEXTFILE_PATH` env var |
+| - | `--textfile` | Filename for Prometheus exporter file | ❌ | `crons.prom` |
+| - | `--metric` | Metric name for Prometheus metrics | ❌ | `crontab` |
+| - | `--no-metric` | Disable metric writing to Prometheus exporter file | ❌ | false |
+| `-v` | `--version` | Display version information and exit | ❌ | - |
+| - | `--` | Separator before command and its arguments | ✅ | - |
 
 ### Notes
 
@@ -98,15 +106,15 @@ node_exporter \
 You can customize both the directory and filename for the Prometheus exporter file:
 
 **Directory** (priority order):
-1. **Command line argument `-d`** (highest priority):
+1. **Command line argument `--dir` or `-d`** (highest priority):
 ```bash
-cronmanager -n "job_cron" -d /custom/path/to/directory -- command
+cronmanager --name job_cron --dir /custom/path/to/directory -- command
 ```
 
 2. **Environment variable `COLLECTOR_TEXTFILE_PATH`**:
 ```bash
 export COLLECTOR_TEXTFILE_PATH=/custom/path/to/directory
-cronmanager -n "job_cron" -- command
+cronmanager --name job_cron -- command
 ```
 
 3. **Default path** (lowest priority): `/var/cache/prometheus`
@@ -114,12 +122,24 @@ cronmanager -n "job_cron" -- command
 **Filename**:
 - Use `--textfile` to specify a custom filename (default: `crons.prom`):
 ```bash
-cronmanager -n "job_cron" --textfile my-metrics.prom -- command
+cronmanager --name job_cron --textfile my-metrics.prom -- command
 ```
 
 **Combined example**:
 ```bash
-cronmanager -n "job_cron" -d /tmp/prometheus --textfile custom.prom -- command
+cronmanager --name job_cron --dir /tmp/prometheus --textfile custom.prom -- command
+```
+
+**Metric name customization**:
+- Use `--metric` to specify a custom metric name (default: `crontab`):
+```bash
+cronmanager --name job_cron --metric my_cron_metric -- command
+```
+
+**Disable metric writing**:
+- Use `--no-metric` to disable metric writing entirely:
+```bash
+cronmanager --name job_cron --no-metric -- command
 ```
 
 ### Permissions
@@ -141,12 +161,12 @@ cron-manager generates Prometheus-format metric files with the following dimensi
 ### Metric Example
 
 ```prometheus
-# TYPE cron_job gauge
-cron_job{name="task_cron",dimension="failed"} 0
-cron_job{name="task_cron",dimension="delayed"} 0
-cron_job{name="task_cron",dimension="duration"} 10
-cron_job{name="task_cron",dimension="run"} 0
-cron_job{name="task_cron",dimension="last"} 1704067200
+# TYPE crontab gauge
+crontab{name="task_cron",dimension="failed"} 0
+crontab{name="task_cron",dimension="delayed"} 0
+crontab{name="task_cron",dimension="duration"} 10
+crontab{name="task_cron",dimension="run"} 0
+crontab{name="task_cron",dimension="last"} 1704067200
 ```
 
 ## License

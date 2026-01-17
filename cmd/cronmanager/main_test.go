@@ -1,8 +1,9 @@
 package main
 
 import (
-	"flag"
 	"testing"
+
+	"github.com/spf13/pflag"
 )
 
 // TestFlagParsing tests command line flag parsing
@@ -12,24 +13,42 @@ func TestFlagParsing(t *testing.T) {
 		flgVersion = false
 
 		// Create new flag set and register version flag
-		fs := flag.NewFlagSet("test", flag.ContinueOnError)
-		fs.BoolVar(&flgVersion, "version", false, "print version")
+		fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		fs.BoolVarP(&flgVersion, "version", "v", false, "print version")
 
-		err := fs.Parse([]string{"-version"})
+		err := fs.Parse([]string{"--version"})
 		if err != nil {
 			t.Errorf("flag parsing error = %v", err)
 		}
 
 		if !flgVersion {
-			t.Error("flgVersion should be true after parsing -version flag")
+			t.Error("flgVersion should be true after parsing --version flag")
 		}
 	})
 
-	t.Run("idle flag set", func(t *testing.T) {
+	t.Run("version flag set with short option", func(t *testing.T) {
+		// Reset global variable
+		flgVersion = false
+
+		// Create new flag set and register version flag
+		fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		fs.BoolVarP(&flgVersion, "version", "v", false, "print version")
+
+		err := fs.Parse([]string{"-v"})
+		if err != nil {
+			t.Errorf("flag parsing error = %v", err)
+		}
+
+		if !flgVersion {
+			t.Error("flgVersion should be true after parsing -v flag")
+		}
+	})
+
+	t.Run("idle flag set with short options", func(t *testing.T) {
 		// Create new flag set
-		fs := flag.NewFlagSet("test", flag.ContinueOnError)
-		idleSeconds := fs.Int("i", 0, "idle seconds")
-		jobnamePtr := fs.String("n", "", "job name")
+		fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		idleSeconds := fs.IntP("idle", "i", 0, "idle seconds")
+		jobnamePtr := fs.StringP("name", "n", "", "job name")
 
 		err := fs.Parse([]string{"-i", "60", "-n", "test_job", "--", "echo", "test"})
 		if err != nil {
@@ -44,11 +63,30 @@ func TestFlagParsing(t *testing.T) {
 		}
 	})
 
+	t.Run("idle flag set with long options", func(t *testing.T) {
+		// Create new flag set
+		fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		idleSeconds := fs.IntP("idle", "i", 0, "idle seconds")
+		jobnamePtr := fs.StringP("name", "n", "", "job name")
+
+		err := fs.Parse([]string{"--idle", "60", "--name", "test_job", "--", "echo", "test"})
+		if err != nil {
+			t.Errorf("flag parsing error = %v", err)
+		}
+
+		if *idleSeconds != 60 {
+			t.Errorf("idleSeconds = %v, want 60", *idleSeconds)
+		}
+		if *jobnamePtr != "test_job" {
+			t.Errorf("jobnamePtr = %v, want 'test_job'", *jobnamePtr)
+		}
+	})
+
 	t.Run("idle flag not set", func(t *testing.T) {
 		// Create new flag set
-		fs := flag.NewFlagSet("test", flag.ContinueOnError)
-		idleSeconds := fs.Int("i", 0, "idle seconds")
-		jobnamePtr := fs.String("n", "", "job name")
+		fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		idleSeconds := fs.IntP("idle", "i", 0, "idle seconds")
+		jobnamePtr := fs.StringP("name", "n", "", "job name")
 
 		err := fs.Parse([]string{"-n", "test_job", "--", "echo", "test"})
 		if err != nil {

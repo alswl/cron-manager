@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/abohmeed/cronmanager/pkg/fslock"
+	"github.com/alswl/cron-manager/internal/fslock"
 	"github.com/spf13/afero"
 )
 
@@ -19,6 +19,10 @@ var (
 	customExporterDir string
 	// customExporterFilename is set by SetExporterFilename to override default filename
 	customExporterFilename string
+	// customMetricName is set by SetMetricName to override default metric name
+	customMetricName string
+	// metricDisabled is set by DisableMetric to disable metric writing
+	metricDisabled bool
 )
 
 // UseTestFileSystem sets file system for testing (testing only)
@@ -34,6 +38,8 @@ func ResetFs() {
 	fslock.ResetMemLockers()
 	customExporterDir = ""
 	customExporterFilename = ""
+	customMetricName = ""
+	metricDisabled = false
 }
 
 // SetExporterDir sets a custom directory for Prometheus exporter files.
@@ -46,6 +52,22 @@ func SetExporterDir(dir string) {
 // Default is "crons.prom".
 func SetExporterFilename(filename string) {
 	customExporterFilename = filename
+}
+
+// SetMetricName sets a custom metric name for Prometheus metrics.
+// Default is "crontab".
+func SetMetricName(name string) {
+	customMetricName = name
+}
+
+// DisableMetric disables metric writing to the exporter file.
+func DisableMetric() {
+	metricDisabled = true
+}
+
+// IsMetricDisabled returns whether metric writing is disabled.
+func IsMetricDisabled() bool {
+	return metricDisabled
 }
 
 // GetExporterPath returns the path to the Prometheus exporter file.
@@ -78,8 +100,19 @@ func GetExporterPath() string {
 
 // WriteToExporter writes a metric to the Prometheus exporter file
 func WriteToExporter(jobName string, label string, metric string) {
-	jobNeedle := "cronjob{name=\"" + jobName + "\",dimension=\"" + label + "\"}"
-	typeData := "# TYPE cron_job gauge"
+	// If metric writing is disabled, return early
+	if metricDisabled {
+		return
+	}
+
+	// Determine metric name (default: crontab)
+	metricName := "crontab"
+	if customMetricName != "" {
+		metricName = customMetricName
+	}
+
+	jobNeedle := metricName + "{name=\"" + jobName + "\",dimension=\"" + label + "\"}"
+	typeData := "# TYPE " + metricName + " gauge"
 	jobData := jobNeedle + " " + metric
 
 	exporterPath := GetExporterPath()

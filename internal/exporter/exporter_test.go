@@ -81,12 +81,16 @@ func TestGetExporterPath(t *testing.T) {
 				}
 			}()
 
-			// Reset custom directory and filename
+			// Reset custom directory, filename, and metric settings
 			SetExporterDir("")
 			SetExporterFilename("")
+			SetMetricName("")
+			metricDisabled = false
 			defer func() {
 				SetExporterDir("")
 				SetExporterFilename("")
+				SetMetricName("")
+				metricDisabled = false
 			}()
 
 			// Set up test environment
@@ -96,10 +100,18 @@ func TestGetExporterPath(t *testing.T) {
 			if tt.customFilename != "" {
 				SetExporterFilename(tt.customFilename)
 			}
+			// First unset the env var to ensure clean state
+			_ = os.Unsetenv("COLLECTOR_TEXTFILE_PATH")
+
+			// Then set it according to test case
 			if tt.envExists {
-				_ = os.Setenv("COLLECTOR_TEXTFILE_PATH", tt.envVar)
-			} else {
-				_ = os.Unsetenv("COLLECTOR_TEXTFILE_PATH")
+				if tt.envVar != "" {
+					_ = os.Setenv("COLLECTOR_TEXTFILE_PATH", tt.envVar)
+				} else {
+					// For empty env var test, we need to set it to empty string
+					// but GetExporterPath checks for exists && != "", so empty string should use default
+					_ = os.Setenv("COLLECTOR_TEXTFILE_PATH", "")
+				}
 			}
 
 			// Test the function
@@ -108,6 +120,59 @@ func TestGetExporterPath(t *testing.T) {
 				t.Errorf("GetExporterPath() = %v, want suffix %v", result, tt.expectedSuffix)
 			}
 		})
+	}
+}
+
+// TestSetMetricName tests the SetMetricName function
+func TestSetMetricName(t *testing.T) {
+	UseTestFileSystem(afero.NewMemMapFs())
+	defer ResetFs()
+
+	tmpDir := "/tmp/test_exporter"
+	SetExporterDir(tmpDir)
+	defer SetExporterDir("")
+
+	SetMetricName("custom_metric")
+	defer SetMetricName("")
+
+	WriteToExporter("test_job", "run", "1")
+
+	exporterPath := GetExporterPath()
+	content, err := afero.ReadFile(fs, exporterPath)
+	if err != nil {
+		t.Fatalf("Failed to read exporter file: %v", err)
+	}
+
+	contentStr := string(content)
+	if !strings.Contains(contentStr, "# TYPE custom_metric gauge") {
+		t.Errorf("Expected metric type 'custom_metric', got: %s", contentStr)
+	}
+	if !strings.Contains(contentStr, `custom_metric{name="test_job",dimension="run"} 1`) {
+		t.Errorf("Expected metric name 'custom_metric', got: %s", contentStr)
+	}
+}
+
+// TestDisableMetric tests the DisableMetric function
+func TestDisableMetric(t *testing.T) {
+	UseTestFileSystem(afero.NewMemMapFs())
+	defer ResetFs()
+
+	tmpDir := "/tmp/test_exporter"
+	SetExporterDir(tmpDir)
+	defer SetExporterDir("")
+
+	DisableMetric()
+	defer func() { metricDisabled = false }()
+
+	WriteToExporter("test_job", "run", "1")
+
+	exporterPath := GetExporterPath()
+	exists, _ := afero.Exists(fs, exporterPath)
+	if exists {
+		content, _ := afero.ReadFile(fs, exporterPath)
+		if len(content) > 0 {
+			t.Errorf("Metric writing should be disabled, but file contains: %s", string(content))
+		}
 	}
 }
 
@@ -120,8 +185,15 @@ func TestWriteToExporter(t *testing.T) {
 
 	// Use virtual path for testing
 	tmpDir := "/test/path"
+	originalEnv, envExists := os.LookupEnv("COLLECTOR_TEXTFILE_PATH")
 	_ = os.Setenv("COLLECTOR_TEXTFILE_PATH", tmpDir)
-	defer func() { _ = os.Unsetenv("COLLECTOR_TEXTFILE_PATH") }()
+	defer func() {
+		if envExists {
+			_ = os.Setenv("COLLECTOR_TEXTFILE_PATH", originalEnv)
+		} else {
+			_ = os.Unsetenv("COLLECTOR_TEXTFILE_PATH")
+		}
+	}()
 
 	exporterPath := filepath.Join(tmpDir, "crons.prom")
 
@@ -140,8 +212,8 @@ func TestWriteToExporter(t *testing.T) {
 			metric:         "1",
 			initialContent: "",
 			expectedLines: []string{
-				"# TYPE cron_job gauge",
-				`cronjob{name="test_job",dimension="run"} 1`,
+				"# TYPE crontab gauge",
+				`crontab{name="test_job",dimension="run"} 1`,
 			},
 		},
 		{
@@ -149,12 +221,12 @@ func TestWriteToExporter(t *testing.T) {
 			jobName: "test_job",
 			label:   "run",
 			metric:  "0",
-			initialContent: `# TYPE cron_job gauge
-cronjob{name="test_job",dimension="run"} 1
+			initialContent: `# TYPE crontab gauge
+crontab{name="test_job",dimension="run"} 1
 `,
 			expectedLines: []string{
-				"# TYPE cron_job gauge",
-				`cronjob{name="test_job",dimension="run"} 0`,
+				"# TYPE crontab gauge",
+				`crontab{name="test_job",dimension="run"} 0`,
 			},
 		},
 		{
@@ -162,13 +234,13 @@ cronjob{name="test_job",dimension="run"} 1
 			jobName: "test_job",
 			label:   "failed",
 			metric:  "0",
-			initialContent: `# TYPE cron_job gauge
-cronjob{name="test_job",dimension="run"} 1
+			initialContent: `# TYPE crontab gauge
+crontab{name="test_job",dimension="run"} 1
 `,
 			expectedLines: []string{
-				"# TYPE cron_job gauge",
-				`cronjob{name="test_job",dimension="run"} 1`,
-				`cronjob{name="test_job",dimension="failed"} 0`,
+				"# TYPE crontab gauge",
+				`crontab{name="test_job",dimension="run"} 1`,
+				`crontab{name="test_job",dimension="failed"} 0`,
 			},
 		},
 		{
@@ -176,13 +248,13 @@ cronjob{name="test_job",dimension="run"} 1
 			jobName: "another_job",
 			label:   "run",
 			metric:  "1",
-			initialContent: `# TYPE cron_job gauge
-cronjob{name="test_job",dimension="run"} 1
+			initialContent: `# TYPE crontab gauge
+crontab{name="test_job",dimension="run"} 1
 `,
 			expectedLines: []string{
-				"# TYPE cron_job gauge",
-				`cronjob{name="test_job",dimension="run"} 1`,
-				`cronjob{name="another_job",dimension="run"} 1`,
+				"# TYPE crontab gauge",
+				`crontab{name="test_job",dimension="run"} 1`,
+				`crontab{name="another_job",dimension="run"} 1`,
 			},
 		},
 	}
@@ -215,7 +287,7 @@ cronjob{name="test_job",dimension="run"} 1
 			// Verify TYPE header exists
 			foundType := false
 			for _, line := range lines {
-				if strings.Contains(line, "# TYPE cron_job gauge") {
+				if strings.Contains(line, "# TYPE crontab gauge") {
 					foundType = true
 					break
 				}
@@ -283,10 +355,10 @@ func TestWriteToExporterFileCreation(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	if !strings.Contains(contentStr, "# TYPE cron_job gauge") {
+	if !strings.Contains(contentStr, "# TYPE crontab gauge") {
 		t.Errorf("Content should contain TYPE header: %s", contentStr)
 	}
-	if !strings.Contains(contentStr, `cronjob{name="test_job",dimension="run"} 1`) {
+	if !strings.Contains(contentStr, `crontab{name="test_job",dimension="run"} 1`) {
 		t.Errorf("Content should contain metric: %s", contentStr)
 	}
 }
@@ -328,7 +400,7 @@ func TestWriteToExporterConcurrentWrites(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	if !strings.Contains(contentStr, "# TYPE cron_job gauge") {
+	if !strings.Contains(contentStr, "# TYPE crontab gauge") {
 		t.Errorf("Content should contain TYPE header: %s", contentStr)
 	}
 }
@@ -357,7 +429,7 @@ func TestWriteToExporterRegexMatching(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	expectedLine := `cronjob{name="test-job_with.special_chars",dimension="run"} 1`
+	expectedLine := `crontab{name="test-job_with.special_chars",dimension="run"} 1`
 	if !strings.Contains(contentStr, expectedLine) {
 		t.Errorf("Content should contain special job name: %s\nGot: %s", expectedLine, contentStr)
 	}
@@ -391,21 +463,21 @@ func TestWriteToExporterMultipleJobs(t *testing.T) {
 	contentStr := string(content)
 
 	// Verify both jobs are present
-	if !strings.Contains(contentStr, `cronjob{name="job1",dimension="run"}`) {
+	if !strings.Contains(contentStr, `crontab{name="job1",dimension="run"}`) {
 		t.Errorf("Content should contain job1 run metric: %s", contentStr)
 	}
-	if !strings.Contains(contentStr, `cronjob{name="job2",dimension="run"}`) {
+	if !strings.Contains(contentStr, `crontab{name="job2",dimension="run"}`) {
 		t.Errorf("Content should contain job2 run metric: %s", contentStr)
 	}
-	if !strings.Contains(contentStr, `cronjob{name="job1",dimension="failed"}`) {
+	if !strings.Contains(contentStr, `crontab{name="job1",dimension="failed"}`) {
 		t.Errorf("Content should contain job1 failed metric: %s", contentStr)
 	}
-	if !strings.Contains(contentStr, `cronjob{name="job2",dimension="failed"}`) {
+	if !strings.Contains(contentStr, `crontab{name="job2",dimension="failed"}`) {
 		t.Errorf("Content should contain job2 failed metric: %s", contentStr)
 	}
 
 	// Verify only one TYPE header
-	typeCount := strings.Count(contentStr, "# TYPE cron_job gauge")
+	typeCount := strings.Count(contentStr, "# TYPE crontab gauge")
 	if typeCount != 1 {
 		t.Errorf("Should have exactly one TYPE header, got %d", typeCount)
 	}

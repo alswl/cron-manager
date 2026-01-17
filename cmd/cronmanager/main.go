@@ -57,6 +57,8 @@ func main() {
 	jobnamePtr := flag.String("n", "", "[Required] The `job name` to appear in the alarm")
 	logfilePtr := flag.String("l", "", "[Optional] The `log file` to store the cron output")
 	idleSeconds := flag.Int("i", 0, "Idle for specified seconds (default: 0, disabled). If set, will wait to ensure the job runs for at least this duration so Prometheus can detect it")
+	exporterDirPtr := flag.String("d", "", "[Optional] Directory for Prometheus exporter file (default: /var/cache/prometheus or COLLECTOR_TEXTFILE_PATH env var)")
+	textfilePtr := flag.String("textfile", "", "[Optional] Filename for Prometheus exporter file (default: crons.prom)")
 	flag.BoolVar(&flgVersion, "version", false, "if true print version and exit")
 	flag.Parse()
 	if flgVersion {
@@ -73,6 +75,16 @@ Example: cronmanager -n update_entities_cron -l /path/to/log -- /usr/bin/php /va
 	if *jobnamePtr == "" {
 		flag.Usage()
 		os.Exit(1)
+	}
+
+	// Set custom exporter directory if provided
+	if *exporterDirPtr != "" {
+		exporter.SetExporterDir(*exporterDirPtr)
+	}
+
+	// Set custom exporter filename if provided
+	if *textfilePtr != "" {
+		exporter.SetExporterFilename(*textfilePtr)
 	}
 
 	// Parse command and arguments from -- separator

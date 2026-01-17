@@ -15,6 +15,10 @@ var (
 	fs afero.Fs = afero.NewOsFs()
 	// useOsLock indicates whether to use real file system locking, default true
 	useOsLock bool = true
+	// customExporterDir is set by SetExporterDir to override default or env var
+	customExporterDir string
+	// customExporterFilename is set by SetExporterFilename to override default filename
+	customExporterFilename string
 )
 
 // UseTestFileSystem sets file system for testing (testing only)
@@ -28,16 +32,48 @@ func ResetFs() {
 	fs = afero.NewOsFs()
 	useOsLock = true
 	fslock.ResetMemLockers()
+	customExporterDir = ""
+	customExporterFilename = ""
 }
 
-// GetExporterPath returns the path to the Prometheus exporter file
+// SetExporterDir sets a custom directory for Prometheus exporter files.
+// This takes precedence over environment variable and default path.
+func SetExporterDir(dir string) {
+	customExporterDir = dir
+}
+
+// SetExporterFilename sets a custom filename for the Prometheus exporter file.
+// Default is "crons.prom".
+func SetExporterFilename(filename string) {
+	customExporterFilename = filename
+}
+
+// GetExporterPath returns the path to the Prometheus exporter file.
+// Priority for directory: customExporterDir (set via SetExporterDir) > COLLECTOR_TEXTFILE_PATH env var > default path
+// Filename: customExporterFilename (set via SetExporterFilename) > default "crons.prom"
 func GetExporterPath() string {
-	exporterPath, exists := os.LookupEnv("COLLECTOR_TEXTFILE_PATH")
-	exporterPath = exporterPath + "/crons.prom"
-	if !exists {
-		exporterPath = "/var/cache/prometheus/crons.prom"
+	var exporterDir string
+
+	// Priority 1: Custom directory set via SetExporterDir
+	if customExporterDir != "" {
+		exporterDir = customExporterDir
+	} else {
+		// Priority 2: Environment variable
+		if envPath, exists := os.LookupEnv("COLLECTOR_TEXTFILE_PATH"); exists && envPath != "" {
+			exporterDir = envPath
+		} else {
+			// Priority 3: Default path
+			exporterDir = "/var/cache/prometheus"
+		}
 	}
-	return exporterPath
+
+	// Determine filename
+	filename := "crons.prom"
+	if customExporterFilename != "" {
+		filename = customExporterFilename
+	}
+
+	return filepath.Join(exporterDir, filename)
 }
 
 // WriteToExporter writes a metric to the Prometheus exporter file

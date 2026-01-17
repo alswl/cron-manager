@@ -46,6 +46,15 @@ cronmanager -n "script_cron" -l /var/log/cron.log -- /usr/bin/python3 /path/to/s
 # Enable idle wait mode (wait at least 60 seconds)
 cronmanager -n "job_cron" -i 60 -- /usr/bin/command arg1 arg2
 
+# Use custom Prometheus exporter directory
+cronmanager -n "job_cron" -d /tmp/prometheus -- /usr/bin/command
+
+# Use custom Prometheus exporter filename
+cronmanager -n "job_cron" --textfile my-metrics.prom -- /usr/bin/command
+
+# Use custom directory and filename
+cronmanager -n "job_cron" -d /tmp/prometheus --textfile custom.prom -- /usr/bin/command
+
 # Custom idle wait duration (wait at least 120 seconds)
 cronmanager -n "job_cron" -i 120 -- /usr/bin/command arg1 arg2
 
@@ -60,6 +69,8 @@ cronmanager -n "update_cron" -- /usr/bin/php /var/www/app/console broadcast:enti
 | `-n` | Job name (will appear in alerts) | ✅ | "Generic" |
 | `-l` | Log file path | ❌ | None (output will be discarded) |
 | `-i` | Idle wait duration in seconds (ensures job runs for at least this duration for Prometheus detection) | ❌ | 0 (disabled) |
+| `-d` | Directory for Prometheus exporter file | ❌ | `/var/cache/prometheus` or `COLLECTOR_TEXTFILE_PATH` env var |
+| `--textfile` | Filename for Prometheus exporter file | ❌ | `crons.prom` |
 | `-version` | Display version information and exit | ❌ | - |
 | `--` | Separator before command and its arguments | ✅ | - |
 
@@ -84,13 +95,32 @@ node_exporter \
 
 ### Custom Metrics File Path
 
-Specify a custom path using the `COLLECTOR_TEXTFILE_PATH` environment variable:
+You can customize both the directory and filename for the Prometheus exporter file:
 
+**Directory** (priority order):
+1. **Command line argument `-d`** (highest priority):
 ```bash
-export COLLECTOR_TEXTFILE_PATH=/custom/path/to/textfile
+cronmanager -n "job_cron" -d /custom/path/to/directory -- command
 ```
 
-Default path: `/var/cache/prometheus/crons.prom`
+2. **Environment variable `COLLECTOR_TEXTFILE_PATH`**:
+```bash
+export COLLECTOR_TEXTFILE_PATH=/custom/path/to/directory
+cronmanager -n "job_cron" -- command
+```
+
+3. **Default path** (lowest priority): `/var/cache/prometheus`
+
+**Filename**:
+- Use `--textfile` to specify a custom filename (default: `crons.prom`):
+```bash
+cronmanager -n "job_cron" --textfile my-metrics.prom -- command
+```
+
+**Combined example**:
+```bash
+cronmanager -n "job_cron" -d /tmp/prometheus --textfile custom.prom -- command
+```
 
 ### Permissions
 

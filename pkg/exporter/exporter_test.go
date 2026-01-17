@@ -13,27 +13,59 @@ import (
 func TestGetExporterPath(t *testing.T) {
 	tests := []struct {
 		name           string
+		customDir      string
+		customFilename string
 		envVar         string
 		envExists      bool
 		expectedSuffix string
 	}{
 		{
+			name:           "with custom directory and filename",
+			customDir:      "/custom/dir",
+			customFilename: "custom.prom",
+			envVar:         "/env/path",
+			envExists:      true,
+			expectedSuffix: "/custom/dir/custom.prom",
+		},
+		{
+			name:           "with custom directory (highest priority)",
+			customDir:      "/custom/dir",
+			customFilename: "",
+			envVar:         "/env/path",
+			envExists:      true,
+			expectedSuffix: "/custom/dir/crons.prom",
+		},
+		{
+			name:           "with custom filename only",
+			customDir:      "",
+			customFilename: "my-metrics.prom",
+			envVar:         "/custom/path",
+			envExists:      true,
+			expectedSuffix: "/custom/path/my-metrics.prom",
+		},
+		{
 			name:           "with COLLECTOR_TEXTFILE_PATH env var",
+			customDir:      "",
+			customFilename: "",
 			envVar:         "/custom/path",
 			envExists:      true,
 			expectedSuffix: "/custom/path/crons.prom",
 		},
 		{
 			name:           "without COLLECTOR_TEXTFILE_PATH env var",
+			customDir:      "",
+			customFilename: "",
 			envVar:         "",
 			envExists:      false,
 			expectedSuffix: "/var/cache/prometheus/crons.prom",
 		},
 		{
-			name:           "with empty COLLECTOR_TEXTFILE_PATH env var",
+			name:           "with empty COLLECTOR_TEXTFILE_PATH env var (should use default)",
+			customDir:      "",
+			customFilename: "",
 			envVar:         "",
 			envExists:      true,
-			expectedSuffix: "/crons.prom",
+			expectedSuffix: "/var/cache/prometheus/crons.prom",
 		},
 	}
 
@@ -49,7 +81,21 @@ func TestGetExporterPath(t *testing.T) {
 				}
 			}()
 
+			// Reset custom directory and filename
+			SetExporterDir("")
+			SetExporterFilename("")
+			defer func() {
+				SetExporterDir("")
+				SetExporterFilename("")
+			}()
+
 			// Set up test environment
+			if tt.customDir != "" {
+				SetExporterDir(tt.customDir)
+			}
+			if tt.customFilename != "" {
+				SetExporterFilename(tt.customFilename)
+			}
 			if tt.envExists {
 				_ = os.Setenv("COLLECTOR_TEXTFILE_PATH", tt.envVar)
 			} else {

@@ -234,6 +234,42 @@ crontab_exit_code != 0
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
 
+## Grafana Dashboard
+
+A pre-configured Grafana dashboard is available in `grafana-dashboard.json`. This dashboard provides comprehensive visualization of cron job metrics.
+
+### Dashboard Features
+
+The dashboard includes the following panels:
+
+1. **Job Status (Last Run)** - Shows success/failure status of the last execution
+2. **Currently Running** - Indicates which jobs are currently executing
+3. **Job Duration** - Time series graph showing execution duration over time
+4. **Job Execution Rate** - Shows the rate of successful and failed executions per second
+5. **Success Rate** - Gauge showing the percentage of successful executions in the last 5 minutes
+6. **Exit Code** - Displays the exit code from the last execution
+7. **Last Run Time** - Shows how long ago each job last ran
+8. **Jobs Overview Table** - Comprehensive table with all metrics for quick overview
+
+### Dashboard Variables
+
+- **Datasource**: Select your Prometheus datasource
+- **Job Name**: Filter by specific job names (supports multi-select and "All")
+
+### Importing the Dashboard
+
+1. Open Grafana web interface
+2. Navigate to **Dashboards** → **Import**
+3. Upload the `grafana-dashboard.json` file or paste its contents
+4. Select your Prometheus datasource
+5. Click **Import**
+
+### Dashboard Requirements
+
+- Grafana version 8.0 or higher
+- Prometheus datasource configured in Grafana
+- Prometheus Node Exporter collecting metrics from cron-manager
+
 ## Acknowledgments
 
 This project is based on the original work by [abohmeed/cronmanager](https://github.com/abohmeed/cronmanager). We extend our sincere gratitude to the original author and contributors for their excellent work.

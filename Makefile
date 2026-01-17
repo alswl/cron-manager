@@ -16,9 +16,9 @@
 SHELL := /bin/bash
 NOW_SHORT := $(shell date +%Y%m%d%H%M)
 
-PROJECT := your-project
+PROJECT := cron-manager
 # Target binaries. You can build multiple binaries for a single project.
-TARGETS := your-cmd-app-1 your-cmd-app-2
+TARGETS := cronmanager
 
 # Container registries.
 REGISTRIES ?= ""
@@ -31,7 +31,7 @@ IMAGE_PREFIX ?= $(strip )
 IMAGE_SUFFIX ?= $(strip )
 
 # This repo's root import path (under GOPATH).
-ROOT := github.com/your/project
+ROOT := github.com/abohmeed/cronmanager
 
 # Project main package location (can be multiple ones).
 CMD_DIR := ./cmd

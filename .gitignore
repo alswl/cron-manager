@@ -112,3 +112,7 @@ fabric.properties
 go-toodledo.iml
 bin
 data
+# for github actions
+dist
+# for github actions
+CI_RELEASE_NOTES.md

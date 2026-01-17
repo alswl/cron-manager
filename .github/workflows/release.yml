@@ -22,21 +22,31 @@ jobs:
       with:
         go-version: '1.25'
 
-    - name: Get version from tag
+    - name: Get version from VERSION file
       id: get_version
       run: |
-        VERSION=${GITHUB_REF#refs/tags/}
+        VERSION=$(make version)
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Version: $VERSION"
 
-    - name: Build binaries
-      env:
-        VERSION: ${{ steps.get_version.outputs.version }}
-        COMMIT: ${{ github.sha }}
-        ROOT: github.com/alswl/cron-manager
+    - name: Generate release notes
       run: |
-        mkdir -p dist
+        # Install git-cliff
+        curl -fsSL https://github.com/orhun/git-cliff/releases/download/v2.11.0/git-cliff-2.11.0-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp
+        sudo mv /tmp/git-cliff-*/git-cliff /usr/local/bin/
         
+        # Generate release notes for current tag
+        git-cliff --current --strip all --output CI_RELEASE_NOTES.md || echo "No changes found" > CI_RELEASE_NOTES.md
+        
+        echo "Generated release notes:"
+        cat CI_RELEASE_NOTES.md
+
+    - name: Build binaries
+      run: |
+        # Clean and prepare
+        rm -rf bin dist
+        mkdir -p bin
+
         # Build matrix: OS/ARCH combinations
         platforms=(
           "linux/amd64"
@@ -46,64 +56,55 @@ jobs:
           "windows/amd64"
           "windows/arm64"
         )
-        
+
         for platform in "${platforms[@]}"; do
           IFS='/' read -r os arch <<< "$platform"
-          
-          if [ "$os" = "windows" ]; then
-            suffix=".exe"
+          echo "Building for $os/$arch..."
+          GOOS=$os GOARCH=$arch make build
+        done
+
+        echo "Built binaries in bin/:"
+        ls -lh bin/
+        
+        # Copy platform-specific binaries to dist for release
+        mkdir -p dist
+        for platform in "${platforms[@]}"; do
+          IFS='/' read -r os arch <<< "$platform"
+          src="bin/cronmanager-${os}-${arch}"
+          if [ -f "$src" ]; then
+            cp "$src" "dist/"
+            echo "✓ Copied: $src -> dist/"
           else
-            suffix=""
+            echo "✗ Missing: $src"
+            exit 1
           fi
-          
-          output_file="dist/cronmanager-${os}-${arch}${suffix}"
-          
-          echo "Building for $os/$arch -> $output_file..."
-          GOOS=$os GOARCH=$arch go build -v \
-            -ldflags "-s -w \
-              -X ${ROOT}/pkg/version.Version=${VERSION} \
-              -X ${ROOT}/pkg/version.Commit=${COMMIT} \
-              -X ${ROOT}/pkg/version.Package=${ROOT}" \
-            -o "$output_file" \
-            ./cmd/cronmanager
         done
         
+        echo "Release binaries in dist/:"
         ls -lh dist/
 
     - name: Create checksums
       run: |
         cd dist
+        echo "Creating checksums for:"
+        ls -1 cronmanager-*
+        
         for file in cronmanager-*; do
-          if [[ "$file" != *.sha256 ]]; then
+          if [[ -f "$file" && "$file" != *.sha256 ]]; then
+            echo "Creating checksum for: $file"
             sha256sum "$file" > "${file}.sha256"
           fi
         done
+        
+        echo "Final dist with checksums:"
         ls -lh
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        name: Release ${{ steps.get_version.outputs.version }}
-        body: |
-          ## Release ${{ steps.get_version.outputs.version }}
-          
-          ### Downloads
-          
-          **Linux:**
-          - [cronmanager-linux-amd64](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-linux-amd64)
-          - [cronmanager-linux-arm64](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-linux-arm64)
-          
-          **macOS:**
-          - [cronmanager-darwin-amd64](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-darwin-amd64)
-          - [cronmanager-darwin-arm64](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-darwin-arm64)
-          
-          **Windows:**
-          - [cronmanager-windows-amd64.exe](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-windows-amd64.exe)
-          - [cronmanager-windows-arm64.exe](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-windows-arm64.exe)
-          
-          ### Checksums
-          
-          All files include SHA256 checksums for verification.
+        tag_name: v${{ steps.get_version.outputs.version }}
+        name: Release v${{ steps.get_version.outputs.version }}
+        body_path: CI_RELEASE_NOTES.md
         files: |
           dist/*
         draft: true

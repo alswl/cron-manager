@@ -12,4 +12,4 @@ bump: check-git-status ## Bump version
 
 .PHONY: version
 version:
-	cat VERSION
+	@cat VERSION

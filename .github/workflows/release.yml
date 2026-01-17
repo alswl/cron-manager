@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+
+    - name: Get version from tag
+      id: get_version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version: $VERSION"
+
+    - name: Build binaries
+      env:
+        VERSION: ${{ steps.get_version.outputs.version }}
+        COMMIT: ${{ github.sha }}
+        ROOT: github.com/abohmeed/cronmanager
+      run: |
+        mkdir -p dist
+        
+        # Build matrix: OS/ARCH combinations
+        platforms=(
+          "linux/amd64"
+          "linux/arm64"
+          "darwin/amd64"
+          "darwin/arm64"
+          "windows/amd64"
+          "windows/arm64"
+        )
+        
+        for platform in "${platforms[@]}"; do
+          IFS='/' read -r os arch <<< "$platform"
+          
+          if [ "$os" = "windows" ]; then
+            suffix=".exe"
+          else
+            suffix=""
+          fi
+          
+          output_file="dist/cronmanager-${os}-${arch}${suffix}"
+          
+          echo "Building for $os/$arch -> $output_file..."
+          GOOS=$os GOARCH=$arch go build -v \
+            -ldflags "-s -w \
+              -X ${ROOT}/pkg/version.Version=${VERSION} \
+              -X ${ROOT}/pkg/version.Commit=${COMMIT} \
+              -X ${ROOT}/pkg/version.Package=${ROOT}" \
+            -o "$output_file" \
+            ./cmd/cronmanager
+        done
+        
+        ls -lh dist/
+
+    - name: Create checksums
+      run: |
+        cd dist
+        for file in cronmanager-*; do
+          if [[ "$file" != *.sha256 ]]; then
+            sha256sum "$file" > "${file}.sha256"
+          fi
+        done
+        ls -lh
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Release ${{ steps.get_version.outputs.version }}
+        body: |
+          ## Release ${{ steps.get_version.outputs.version }}
+          
+          ### Downloads
+          
+          **Linux:**
+          - [cronmanager-linux-amd64](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-linux-amd64)
+          - [cronmanager-linux-arm64](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-linux-arm64)
+          
+          **macOS:**
+          - [cronmanager-darwin-amd64](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-darwin-amd64)
+          - [cronmanager-darwin-arm64](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-darwin-arm64)
+          
+          **Windows:**
+          - [cronmanager-windows-amd64.exe](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-windows-amd64.exe)
+          - [cronmanager-windows-arm64.exe](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.version }}/cronmanager-windows-arm64.exe)
+          
+          ### Checksums
+          
+          All files include SHA256 checksums for verification.
+        files: |
+          dist/*
+        draft: true
+        prerelease: false

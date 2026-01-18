@@ -66,7 +66,7 @@ func main() {
 
 	// Set usage function
 	pflag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: cronmanager --name <jobname> [options] -- <command> [args...]
+		fmt.Fprintf(os.Stderr, `Usage: cronmgr --name <jobname> [options] -- <command> [args...]
 
 Execute and monitor a cron job, publishing metrics to Prometheus.
 
@@ -75,10 +75,10 @@ Options:
 		pflag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, `
 Examples:
-  cronmanager --name update_entities_cron -- /usr/bin/php /var/www/app/console task:run
-  cronmanager -n job_cron --log /var/log/cron.log -- /usr/bin/python3 script.py
-  cronmanager -n job_cron --idle 60 --metric my_metric -- /usr/bin/command arg1 arg2
-  cronmanager -n job_cron --no-metric -- /usr/bin/command
+  cronmgr --name update_entities_cron -- /usr/bin/php /var/www/app/console task:run
+  cronmgr -n job_cron --log /var/log/cron.log -- /usr/bin/python3 script.py
+  cronmgr -n job_cron --idle 60 --metric my_metric -- /usr/bin/command arg1 arg2
+  cronmgr -n job_cron --no-metric -- /usr/bin/command
 
 For more information, visit: https://github.com/alswl/cron-manager
 `)
@@ -90,7 +90,7 @@ For more information, visit: https://github.com/alswl/cron-manager
 	pflag.Parse()
 
 	if flgVersion {
-		fmt.Println("CronManager version " + version.Version)
+		fmt.Println("cronmgr version " + version.Version)
 		os.Exit(0)
 	}
 

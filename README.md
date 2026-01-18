@@ -45,20 +45,20 @@ graph LR
 **Download from releases:**
 ```bash
 # Linux amd64
-wget https://github.com/alswl/cron-manager/releases/latest/download/cronmanager-linux-amd64
-chmod +x cronmanager-linux-amd64
-sudo mv cronmanager-linux-amd64 /usr/local/bin/cronmanager
+wget https://github.com/alswl/cron-manager/releases/latest/download/cronmgr-linux-amd64
+chmod +x cronmgr-linux-amd64
+sudo mv cronmgr-linux-amd64 /usr/local/bin/cronmgr
 
 # macOS arm64
-wget https://github.com/alswl/cron-manager/releases/latest/download/cronmanager-darwin-arm64
-chmod +x cronmanager-darwin-arm64
-sudo mv cronmanager-darwin-arm64 /usr/local/bin/cronmanager
+wget https://github.com/alswl/cron-manager/releases/latest/download/cronmgr-darwin-arm64
+chmod +x cronmgr-darwin-arm64
+sudo mv cronmgr-darwin-arm64 /usr/local/bin/cronmgr
 ```
 
 **Or build from source:**
 ```bash
 make build
-sudo mv ./bin/cronmanager /usr/local/bin/
+sudo mv ./bin/cronmgr /usr/local/bin/
 ```
 
 ### Basic Example
@@ -68,7 +68,7 @@ sudo mv ./bin/cronmanager /usr/local/bin/
 0 2 * * * /usr/bin/backup.sh
 
 # After: Observable cron job with monitoring
-0 2 * * * cronmanager -n "daily_backup" -- /usr/bin/backup.sh
+0 2 * * * cronmgr -n "daily_backup" -- /usr/bin/backup.sh
 ```
 
 That's it! Now you get:
@@ -84,23 +84,23 @@ That's it! Now you get:
 ### Command Syntax
 
 ```bash
-cronmanager -n <job_name> [options] -- <command> [args...]
+cronmgr -n <job_name> [options] -- <command> [args...]
 ```
 
 ### Common Examples
 
 ```bash
 # With logging
-cronmanager -n "backup" -l /var/log/backup.log -- /usr/bin/backup.sh
+cronmgr -n "backup" -l /var/log/backup.log -- /usr/bin/backup.sh
 
 # Custom metrics path
-cronmanager -n "sync" -d /tmp/prometheus -- /usr/bin/sync.sh
+cronmgr -n "sync" -d /tmp/prometheus -- /usr/bin/sync.sh
 
 # Idle wait mode (for long-running detection)
-cronmanager -n "etl" -i 60 -- /usr/bin/etl.py
+cronmgr -n "etl" -i 60 -- /usr/bin/etl.py
 
 # Disable metrics (dry-run mode)
-cronmanager -n "test" --no-metric -- /usr/bin/test.sh
+cronmgr -n "test" --no-metric -- /usr/bin/test.sh
 ```
 
 ### CLI Options
@@ -200,10 +200,10 @@ node_exporter \
 ```bash
 # Via environment variable
 export COLLECTOR_TEXTFILE_PATH=/custom/metrics
-cronmanager -n "job" -- /usr/bin/command
+cronmgr -n "job" -- /usr/bin/command
 
 # Via CLI flag (overrides env var)
-cronmanager -n "job" --dir /tmp/metrics --textfile custom.prom -- /usr/bin/command
+cronmgr -n "job" --dir /tmp/metrics --textfile custom.prom -- /usr/bin/command
 ```
 
 **Permissions:** Ensure write access to the metrics directory for the cron user.

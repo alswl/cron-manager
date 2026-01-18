@@ -45,20 +45,20 @@ graph LR
 **从 Releases 下载：**
 ```bash
 # Linux amd64
-wget https://github.com/alswl/cron-manager/releases/latest/download/cronmanager-linux-amd64
-chmod +x cronmanager-linux-amd64
-sudo mv cronmanager-linux-amd64 /usr/local/bin/cronmanager
+wget https://github.com/alswl/cron-manager/releases/latest/download/cronmgr-linux-amd64
+chmod +x cronmgr-linux-amd64
+sudo mv cronmgr-linux-amd64 /usr/local/bin/cronmgr
 
 # macOS arm64
-wget https://github.com/alswl/cron-manager/releases/latest/download/cronmanager-darwin-arm64
-chmod +x cronmanager-darwin-arm64
-sudo mv cronmanager-darwin-arm64 /usr/local/bin/cronmanager
+wget https://github.com/alswl/cron-manager/releases/latest/download/cronmgr-darwin-arm64
+chmod +x cronmgr-darwin-arm64
+sudo mv cronmgr-darwin-arm64 /usr/local/bin/cronmgr
 ```
 
 **或从源码编译：**
 ```bash
 make build
-sudo mv ./bin/cronmanager /usr/local/bin/
+sudo mv ./bin/cronmgr /usr/local/bin/
 ```
 
 ### 基础示例
@@ -68,7 +68,7 @@ sudo mv ./bin/cronmanager /usr/local/bin/
 0 2 * * * /usr/bin/backup.sh
 
 # 之后：可观测的 cron 任务（带监控）
-0 2 * * * cronmanager -n "daily_backup" -- /usr/bin/backup.sh
+0 2 * * * cronmgr -n "daily_backup" -- /usr/bin/backup.sh
 ```
 
 就这么简单！现在你可以获得：
@@ -84,23 +84,23 @@ sudo mv ./bin/cronmanager /usr/local/bin/
 ### 命令语法
 
 ```bash
-cronmanager -n <job_name> [选项] -- <命令> [参数...]
+cronmgr -n <job_name> [选项] -- <命令> [参数...]
 ```
 
 ### 常用示例
 
 ```bash
 # 带日志记录
-cronmanager -n "backup" -l /var/log/backup.log -- /usr/bin/backup.sh
+cronmgr -n "backup" -l /var/log/backup.log -- /usr/bin/backup.sh
 
 # 自定义指标路径
-cronmanager -n "sync" -d /tmp/prometheus -- /usr/bin/sync.sh
+cronmgr -n "sync" -d /tmp/prometheus -- /usr/bin/sync.sh
 
 # 空闲等待模式（用于长时间运行检测）
-cronmanager -n "etl" -i 60 -- /usr/bin/etl.py
+cronmgr -n "etl" -i 60 -- /usr/bin/etl.py
 
 # 禁用指标（试运行模式）
-cronmanager -n "test" --no-metric -- /usr/bin/test.sh
+cronmgr -n "test" --no-metric -- /usr/bin/test.sh
 ```
 
 ### 命令行选项
@@ -200,10 +200,10 @@ node_exporter \
 ```bash
 # 通过环境变量
 export COLLECTOR_TEXTFILE_PATH=/custom/metrics
-cronmanager -n "job" -- /usr/bin/command
+cronmgr -n "job" -- /usr/bin/command
 
 # 通过 CLI 参数（覆盖环境变量）
-cronmanager -n "job" --dir /tmp/metrics --textfile custom.prom -- /usr/bin/command
+cronmgr -n "job" --dir /tmp/metrics --textfile custom.prom -- /usr/bin/command
 ```
 
 **权限：** 确保 cron 用户对指标目录有写入权限。

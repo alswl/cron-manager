@@ -17,7 +17,7 @@ var (
 var GoVersion = runtime.Version()
 
 func Message() string {
-	const format = `cron-manager:   %s (Revision: %s)
+	const format = `cronmgr:   %s (Revision: %s)
 package:    %s
 build date: %s
 go version: %s

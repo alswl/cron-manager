@@ -18,7 +18,7 @@ NOW_SHORT := $(shell date +%Y%m%d%H%M)
 
 PROJECT := cron-manager
 # Target binaries. You can build multiple binaries for a single project.
-TARGETS := cronmanager
+TARGETS := cronmgr
 
 # Container registries.
 REGISTRIES ?= ""

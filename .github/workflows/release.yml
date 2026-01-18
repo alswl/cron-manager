@@ -1,111 +1,102 @@
 name: Release
-
 on:
   push:
     tags:
-      - 'v*'
-
+      - v*
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Get version from VERSION file
+        id: get_version
+        run: |
+          VERSION=$(make version)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+      - name: Generate release notes
+        run: |
+          # Install git-cliff
+          curl -fsSL https://github.com/orhun/git-cliff/releases/download/v2.11.0/git-cliff-2.11.0-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp
+          sudo mv /tmp/git-cliff-*/git-cliff /usr/local/bin/
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.25'
+          # Generate release notes for current tag
+          git-cliff --current --strip all --output CI_RELEASE_NOTES.md || echo "No changes found" > CI_RELEASE_NOTES.md
 
-    - name: Get version from VERSION file
-      id: get_version
-      run: |
-        VERSION=$(make version)
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Version: $VERSION"
+          echo "Generated release notes:"
+          cat CI_RELEASE_NOTES.md
+      - name: Build binaries
+        run: |
+          # Clean and prepare
+          rm -rf bin dist
+          mkdir -p bin
 
-    - name: Generate release notes
-      run: |
-        # Install git-cliff
-        curl -fsSL https://github.com/orhun/git-cliff/releases/download/v2.11.0/git-cliff-2.11.0-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp
-        sudo mv /tmp/git-cliff-*/git-cliff /usr/local/bin/
-        
-        # Generate release notes for current tag
-        git-cliff --current --strip all --output CI_RELEASE_NOTES.md || echo "No changes found" > CI_RELEASE_NOTES.md
-        
-        echo "Generated release notes:"
-        cat CI_RELEASE_NOTES.md
+          # Build matrix: OS/ARCH combinations
+          platforms=(
+            "linux/amd64"
+            "linux/arm64"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/amd64"
+            "windows/arm64"
+          )
 
-    - name: Build binaries
-      run: |
-        # Clean and prepare
-        rm -rf bin dist
-        mkdir -p bin
+          for platform in "${platforms[@]}"; do
+            IFS='/' read -r os arch <<< "$platform"
+            echo "Building for $os/$arch..."
+            GOOS=$os GOARCH=$arch make build
+          done
 
-        # Build matrix: OS/ARCH combinations
-        platforms=(
-          "linux/amd64"
-          "linux/arm64"
-          "darwin/amd64"
-          "darwin/arm64"
-          "windows/amd64"
-          "windows/arm64"
-        )
+          echo "Built binaries in bin/:"
+          ls -lh bin/
 
-        for platform in "${platforms[@]}"; do
-          IFS='/' read -r os arch <<< "$platform"
-          echo "Building for $os/$arch..."
-          GOOS=$os GOARCH=$arch make build
-        done
+          # Copy platform-specific binaries to dist for release
+          mkdir -p dist
+          for platform in "${platforms[@]}"; do
+            IFS='/' read -r os arch <<< "$platform"
+            src="bin/cronmanager-${os}-${arch}"
+            if [ -f "$src" ]; then
+              cp "$src" "dist/"
+              echo "✓ Copied: $src -> dist/"
+            else
+              echo "✗ Missing: $src"
+              exit 1
+            fi
+          done
 
-        echo "Built binaries in bin/:"
-        ls -lh bin/
-        
-        # Copy platform-specific binaries to dist for release
-        mkdir -p dist
-        for platform in "${platforms[@]}"; do
-          IFS='/' read -r os arch <<< "$platform"
-          src="bin/cronmanager-${os}-${arch}"
-          if [ -f "$src" ]; then
-            cp "$src" "dist/"
-            echo "✓ Copied: $src -> dist/"
-          else
-            echo "✗ Missing: $src"
-            exit 1
-          fi
-        done
-        
-        echo "Release binaries in dist/:"
-        ls -lh dist/
+          echo "Release binaries in dist/:"
+          ls -lh dist/
+      - name: Create checksums
+        run: |
+          cd dist
+          echo "Creating checksums for:"
+          ls -1 cronmanager-*
 
-    - name: Create checksums
-      run: |
-        cd dist
-        echo "Creating checksums for:"
-        ls -1 cronmanager-*
-        
-        for file in cronmanager-*; do
-          if [[ -f "$file" && "$file" != *.sha256 ]]; then
-            echo "Creating checksum for: $file"
-            sha256sum "$file" > "${file}.sha256"
-          fi
-        done
-        
-        echo "Final dist with checksums:"
-        ls -lh
+          for file in cronmanager-*; do
+            if [[ -f "$file" && "$file" != *.sha256 ]]; then
+              echo "Creating checksum for: $file"
+              sha256sum "$file" > "${file}.sha256"
+            fi
+          done
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: v${{ steps.get_version.outputs.version }}
-        name: Release v${{ steps.get_version.outputs.version }}
-        body_path: CI_RELEASE_NOTES.md
-        files: |
-          dist/*
-        draft: true
-        prerelease: false
+          echo "Final dist with checksums:"
+          ls -lh
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: Release ${{ steps.get_version.outputs.version }}
+          body_path: CI_RELEASE_NOTES.md
+          files: |
+            dist/*
+          draft: true
+          prerelease: false

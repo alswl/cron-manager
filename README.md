@@ -1,276 +1,217 @@
 # cron-manager
 
-cron-manager is a Go tool for wrapping and monitoring cron jobs, publishing metrics through Prometheus Node Exporter's TextFile Collector.
+English | [简体中文](README_CN.md)
 
-## Features
+**A lightweight cron job wrapper that turns your scheduled tasks into observable, monitorable workloads with zero configuration.**
 
-- Execute cron job commands and monitor their status
-- Measure job execution time with high precision (floating point seconds)
-- Detect job failures and track exit codes
-- Publish monitoring metrics via Prometheus TextFile Collector
-- Support custom metrics file path
-- Support job output logging
-- Support idle wait mode (for Prometheus to detect job running status)
-- Counter metrics for job execution statistics (success/failed counts)
-- Prometheus best practices: separate metric names, HELP comments, proper label escaping
+[![License](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/alswl/cron-manager)](https://goreportcard.com/report/github.com/alswl/cron-manager)
 
-## Installation
+## 🎯 What is cron-manager?
 
-### Build
+cron-manager wraps your cron jobs and automatically exports detailed execution metrics to Prometheus, giving you instant visibility into your scheduled tasks without modifying any existing scripts.
 
-```bash
-make build
+### How It Works
+
+```mermaid
+graph LR
+    A[Cron Schedule] -->|triggers| B[cron-manager]
+    B -->|wraps & executes| C[Your Script/Command]
+    C -->|exit code & output| B
+    B -->|writes metrics| D[.prom file]
+    D -->|collected by| E[Prometheus Node Exporter]
+    E -->|scraped by| F[Prometheus]
+    F -->|visualized in| G[Grafana Dashboard]
+    
+    style B fill:#4CAF50,stroke:#2E7D32,color:#fff
+    style D fill:#FF9800,stroke:#F57C00,color:#fff
+    style G fill:#2196F3,stroke:#1976D2,color:#fff
 ```
 
-### Install to System Path
+### 🌟 Key Features
 
+- **📊 Zero-Config Monitoring** - Just wrap your command, metrics export automatically
+- **⏱️ Precise Timing** - Sub-second execution duration tracking
+- **🚦 Smart Status** - Captures exit codes, detects failures, tracks running state
+- **📈 Rich Metrics** - Success rate, execution frequency, duration trends, and more
+- **🔒 Production-Ready** - File locking, atomic writes, proper error handling
+- **🎨 Beautiful Dashboard** - Pre-built Grafana dashboard highlighting critical info
+- **🔧 Flexible** - Custom metric names, paths, configurable behavior
+
+## 🚀 Quick Start
+
+### Installation
+
+**Download from releases:**
 ```bash
+# Linux amd64
+wget https://github.com/alswl/cron-manager/releases/latest/download/cronmanager-linux-amd64
+chmod +x cronmanager-linux-amd64
+sudo mv cronmanager-linux-amd64 /usr/local/bin/cronmanager
+
+# macOS arm64
+wget https://github.com/alswl/cron-manager/releases/latest/download/cronmanager-darwin-arm64
+chmod +x cronmanager-darwin-arm64
+sudo mv cronmanager-darwin-arm64 /usr/local/bin/cronmanager
+```
+
+**Or build from source:**
+```bash
+make build
 sudo mv ./bin/cronmanager /usr/local/bin/
 ```
 
-## Usage
-
-### Basic Usage
+### Basic Example
 
 ```bash
-cronmanager -n "job_name" [options] -- command [args...]
+# Before: Plain cron job
+0 2 * * * /usr/bin/backup.sh
+
+# After: Observable cron job with monitoring
+0 2 * * * cronmanager -n "daily_backup" -- /usr/bin/backup.sh
 ```
 
-### Examples
+That's it! Now you get:
+- ⏰ Last run timestamp
+- 🚦 Exit code (0 = success, non-zero = failure)
+- ⏱️ Execution duration
+- 📊 Success rate over time
+- 🔄 Execution frequency
+- 🏃 Currently running status
+
+## 📖 Usage
+
+### Command Syntax
 
 ```bash
-# Execute PHP script
-cronmanager -n "task_cron" -- /usr/bin/php /var/www/app/console task:run
-
-# Execute Python script with logging
-cronmanager -n "script_cron" -l /var/log/cron.log -- /usr/bin/python3 /path/to/script.py
-
-# Enable idle wait mode (wait at least 60 seconds)
-cronmanager -n "job_cron" -i 60 -- /usr/bin/command arg1 arg2
-
-# Use custom Prometheus exporter directory
-cronmanager -n "job_cron" -d /tmp/prometheus -- /usr/bin/command
-
-# Use custom Prometheus exporter filename
-cronmanager -n "job_cron" --textfile my-metrics.prom -- /usr/bin/command
-
-# Use custom directory and filename
-cronmanager -n "job_cron" -d /tmp/prometheus --textfile custom.prom -- /usr/bin/command
-
-# Use custom metric name
-cronmanager -n "job_cron" --metric my_cron_metric -- /usr/bin/command
-
-# Disable metric writing
-cronmanager -n "job_cron" --no-metric -- /usr/bin/command
-
-# Custom idle wait duration (wait at least 120 seconds)
-cronmanager -n "job_cron" -i 120 -- /usr/bin/command arg1 arg2
-
-# Command with complex arguments (no need to escape)
-cronmanager -n "update_cron" -- /usr/bin/php /var/www/app/console broadcast:entities:updated -e project -l 20000
+cronmanager -n <job_name> [options] -- <command> [args...]
 ```
 
-### Command Line Options
-
-| Short | Long | Description | Required | Default |
-|-------|------|-------------|----------|---------|
-| `-n` | `--name` | Job name (will appear in alerts) | ✅ | - |
-| `-l` | `--log` | Log file path | ❌ | None (output will be discarded) |
-| `-i` | `--idle` | Idle wait duration in seconds (ensures job runs for at least this duration for Prometheus detection) | ❌ | 0 (disabled) |
-| `-d` | `--dir` | Directory for Prometheus exporter file | ❌ | `/var/lib/prometheus/node-exporter` or `COLLECTOR_TEXTFILE_PATH` env var |
-| - | `--textfile` | Filename for Prometheus exporter file | ❌ | `crons.prom` |
-| - | `--metric` | Metric name for Prometheus metrics | ❌ | `crontab` |
-| - | `--no-metric` | Disable metric writing to Prometheus exporter file | ❌ | false |
-| `-v` | `--version` | Display version information and exit | ❌ | - |
-| - | `--` | Separator before command and its arguments | ✅ | - |
-
-### Notes
-
-- The command and its arguments must be placed after the `--` separator
-- This syntax allows you to use commands with complex arguments without escaping
-- The command must be an executable file path; shell built-ins or pipe operations are not supported
-- It's recommended to append `_cron` suffix to job names for easier identification in Prometheus/Grafana
-
-## Configuration
-
-### Prometheus Node Exporter
-
-Ensure Prometheus Node Exporter is installed and configured with TextFile Collector enabled:
+### Common Examples
 
 ```bash
+# With logging
+cronmanager -n "backup" -l /var/log/backup.log -- /usr/bin/backup.sh
+
+# Custom metrics path
+cronmanager -n "sync" -d /tmp/prometheus -- /usr/bin/sync.sh
+
+# Idle wait mode (for long-running detection)
+cronmanager -n "etl" -i 60 -- /usr/bin/etl.py
+
+# Disable metrics (dry-run mode)
+cronmanager -n "test" --no-metric -- /usr/bin/test.sh
+```
+
+### CLI Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-n, --name` | Job name (required) | - |
+| `-l, --log` | Log file path | discard output |
+| `-i, --idle` | Minimum run duration (seconds) | 0 |
+| `-d, --dir` | Metrics directory | `/var/lib/prometheus/node-exporter` |
+| `--textfile` | Metrics filename | `crons.prom` |
+| `--metric` | Metric name prefix | `crontab` |
+| `--no-metric` | Disable metrics | false |
+| `-v, --version` | Show version | - |
+
+**Note:** Command and arguments must be placed after `--` separator.
+
+## 📊 Metrics
+
+cron-manager exports the following Prometheus metrics (prefix: `crontab` by default):
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `{prefix}_last_run_timestamp_seconds` | gauge | Unix timestamp of last execution |
+| `{prefix}_exit_code` | gauge | Last exit code (0 = success) |
+| `{prefix}_failed` | gauge | Failure status (0 or 1) |
+| `{prefix}_duration_seconds` | gauge | Execution duration |
+| `{prefix}_running` | gauge | Currently running (0 or 1) |
+| `{prefix}_runs_total{status="..."}` | counter | Total runs by status |
+
+### Example Output
+
+```prometheus
+# HELP crontab_last_run_timestamp_seconds Timestamp of the last job execution
+# TYPE crontab_last_run_timestamp_seconds gauge
+crontab_last_run_timestamp_seconds{name="daily_backup"} 1704067200
+
+# HELP crontab_exit_code Exit code of the last job execution
+# TYPE crontab_exit_code gauge
+crontab_exit_code{name="daily_backup"} 0
+
+# HELP crontab_duration_seconds Duration of the last job execution in seconds
+# TYPE crontab_duration_seconds gauge
+crontab_duration_seconds{name="daily_backup"} 125.45
+```
+
+### Useful Queries
+
+```promql
+# Currently running jobs
+crontab_running == 1
+
+# Jobs that failed in last run
+crontab_failed == 1
+
+# Success rate (5m window)
+rate(crontab_runs_total{status="success"}[5m]) / rate(crontab_runs_total[5m])
+
+# Jobs not run in last 24h
+time() - crontab_last_run_timestamp_seconds > 86400
+```
+
+## 📈 Grafana Dashboard
+
+![Grafana Dashboard](_assets/grafana-snapshort.png)
+
+A pre-configured dashboard is available in [`grafana-dashboard.json`](grafana-dashboard.json).
+
+**Key Panels:**
+- ⏰ **Last Run Time** - When each job last executed (with aging alerts)
+- 🚦 **Exit Code** - Color-coded success/failure status
+- 📋 **Jobs Overview** - Sortable table with all job details
+- 📊 **Success Rate** - Historical success metrics
+- ⏱️ **Duration Trends** - Execution time over time
+
+**Import:** Dashboards → Import → Upload `grafana-dashboard.json`
+
+## ⚙️ Configuration
+
+### Prometheus Node Exporter Setup
+
+```bash
+# Enable TextFile Collector
 node_exporter \
   --collector.textfile \
   --collector.textfile.directory=/var/lib/prometheus/node-exporter
 ```
 
-### Custom Metrics File Path
+### Custom Metrics Path
 
-You can customize both the directory and filename for the Prometheus exporter file:
+**Priority order:**
+1. CLI flag `--dir` (highest)
+2. Environment variable `COLLECTOR_TEXTFILE_PATH`
+3. Default: `/var/lib/prometheus/node-exporter`
 
-**Directory** (priority order):
-1. **Command line argument `--dir` or `-d`** (highest priority):
+**Example:**
 ```bash
-cronmanager --name job_cron --dir /custom/path/to/directory -- command
+# Via environment variable
+export COLLECTOR_TEXTFILE_PATH=/custom/metrics
+cronmanager -n "job" -- /usr/bin/command
+
+# Via CLI flag (overrides env var)
+cronmanager -n "job" --dir /tmp/metrics --textfile custom.prom -- /usr/bin/command
 ```
 
-2. **Environment variable `COLLECTOR_TEXTFILE_PATH`**:
-```bash
-export COLLECTOR_TEXTFILE_PATH=/custom/path/to/directory
-cronmanager --name job_cron -- command
-```
+**Permissions:** Ensure write access to the metrics directory for the cron user.
 
-3. **Default path** (lowest priority): `/var/lib/prometheus/node-exporter`
-
-**Filename**:
-- Use `--textfile` to specify a custom filename (default: `crons.prom`):
-```bash
-cronmanager --name job_cron --textfile my-metrics.prom -- command
-```
-
-**Combined example**:
-```bash
-cronmanager --name job_cron --dir /tmp/prometheus --textfile custom.prom -- command
-```
-
-**Metric name customization**:
-- Use `--metric` to specify a custom metric name (default: `crontab`):
-```bash
-cronmanager --name job_cron --metric my_cron_metric -- command
-```
-
-**Disable metric writing**:
-- Use `--no-metric` to disable metric writing entirely:
-```bash
-cronmanager --name job_cron --no-metric -- command
-```
-
-### Permissions
-
-Ensure the user running cron-manager has write permissions to the metrics file directory.
-
-## Monitoring Metrics
-
-cron-manager generates Prometheus-format metric files following best practices with separate metric names and proper types.
-
-### Gauge Metrics
-
-Gauge metrics represent the current state of a job:
-
-| Metric Name | Type | Description | Values |
-|-------------|------|-------------|--------|
-| `{prefix}_failed` | gauge | Whether the job failed | 1 = failed, 0 = success |
-| `{prefix}_exit_code` | gauge | Exit code of the last job execution | Numeric exit code (0 = success) |
-| `{prefix}_duration_seconds` | gauge | Duration of the last job execution | Floating point seconds (e.g., 10.25) |
-| `{prefix}_running` | gauge | Whether the job is currently running | 1 = running, 0 = finished |
-| `{prefix}_last_run_timestamp_seconds` | gauge | Timestamp of the last job execution | Unix timestamp |
-
-Where `{prefix}` is the metric name prefix (default: `crontab`, customizable via `--metric` flag).
-
-### Counter Metrics
-
-Counter metrics track cumulative statistics:
-
-| Metric Name | Type | Description |
-|-------------|------|-------------|
-| `{prefix}_runs_total` | counter | Total number of job runs with status label |
-
-The `runs_total` counter includes a `status` label with values:
-- `status="started"` - Job execution started
-- `status="success"` - Job completed successfully
-- `status="failed"` - Job failed with non-zero exit code
-
-### Metric Example
-
-```prometheus
-# HELP crontab_failed Whether the job failed (1 = failed, 0 = success)
-# TYPE crontab_failed gauge
-crontab_failed{name="task_cron"} 0
-
-# HELP crontab_exit_code Exit code of the last job execution
-# TYPE crontab_exit_code gauge
-crontab_exit_code{name="task_cron"} 0
-
-# HELP crontab_duration_seconds Duration of the last job execution in seconds
-# TYPE crontab_duration_seconds gauge
-crontab_duration_seconds{name="task_cron"} 10.25
-
-# HELP crontab_running Whether the job is currently running (1 = running, 0 = finished)
-# TYPE crontab_running gauge
-crontab_running{name="task_cron"} 0
-
-# HELP crontab_last_run_timestamp_seconds Timestamp of the last job execution
-# TYPE crontab_last_run_timestamp_seconds gauge
-crontab_last_run_timestamp_seconds{name="task_cron"} 1704067200
-
-# HELP crontab_runs_total Total number of job runs
-# TYPE crontab_runs_total counter
-crontab_runs_total{name="task_cron",status="success"} 100
-crontab_runs_total{name="task_cron",status="failed"} 5
-crontab_runs_total{name="task_cron",status="started"} 105
-```
-
-### Querying Metrics
-
-With the new metric design, queries are more intuitive:
-
-```promql
-# Check if any job is currently running
-crontab_running == 1
-
-# Get success rate
-rate(crontab_runs_total{status="success"}[5m]) / rate(crontab_runs_total[5m])
-
-# Get average duration
-avg(crontab_duration_seconds)
-
-# Alert on job failures
-crontab_failed == 1
-
-# Get jobs with non-zero exit codes
-crontab_exit_code != 0
-```
-
-## License
+## 📝 License
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
 
-## Grafana Dashboard
+## 🙏 Acknowledgments
 
-A pre-configured Grafana dashboard is available in `grafana-dashboard.json`. This dashboard provides comprehensive visualization of cron job metrics.
-
-### Dashboard Features
-
-The dashboard includes the following panels:
-
-1. **Job Status (Last Run)** - Shows success/failure status of the last execution
-2. **Currently Running** - Indicates which jobs are currently executing
-3. **Job Duration** - Time series graph showing execution duration over time
-4. **Job Execution Rate** - Shows the rate of successful and failed executions per second
-5. **Success Rate** - Gauge showing the percentage of successful executions in the last 5 minutes
-6. **Exit Code** - Displays the exit code from the last execution
-7. **Last Run Time** - Shows how long ago each job last ran
-8. **Jobs Overview Table** - Comprehensive table with all metrics for quick overview
-
-### Dashboard Variables
-
-- **Datasource**: Select your Prometheus datasource
-- **Instance**: Filter by instance (hostname/server) - supports multi-select and "All"
-- **Job Name**: Filter by specific job names (supports multi-select and "All", filtered by selected instance)
-
-### Importing the Dashboard
-
-1. Open Grafana web interface
-2. Navigate to **Dashboards** → **Import**
-3. Upload the `grafana-dashboard.json` file or paste its contents
-4. Select your Prometheus datasource
-5. Click **Import**
-
-### Dashboard Requirements
-
-- Grafana version 8.0 or higher
-- Prometheus datasource configured in Grafana
-- Prometheus Node Exporter collecting metrics from cron-manager
-
-## Acknowledgments
-
-This project is based on the original work by [abohmeed/cronmanager](https://github.com/abohmeed/cronmanager). We extend our sincere gratitude to the original author and contributors for their excellent work.
+Based on the original work by [abohmeed/cronmanager](https://github.com/abohmeed/cronmanager). Thanks to the original author and contributors.

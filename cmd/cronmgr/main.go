@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/alswl/cron-manager/internal/exporter"
 	"github.com/alswl/cron-manager/internal/job"
+	"github.com/alswl/cron-manager/internal/logwriter"
 	"github.com/alswl/cron-manager/internal/version"
 	"github.com/spf13/pflag"
 )
@@ -168,36 +167,43 @@ For more information, visit: https://github.com/alswl/cron-manager
 	cmd := exec.Command(cmdBin, cmdArgsOnly...)
 
 	var buf bytes.Buffer
+	var logWriter *logwriter.LogWriter
 
-	// If we have a log file specified, use it
+	// Setup log writer if log file is specified
 	if *logfilePtr != "" {
-		outfile, err := os.Create(*logfilePtr)
+		logWriter, err = logwriter.NewLogWriter(*logfilePtr)
 		if err != nil {
-			panic(err)
+			log.Fatalf("Failed to create log writer: %v", err)
 		}
-		defer func() { _ = outfile.Close() }()
-		stdoutPipe, err := cmd.StdoutPipe()
-		if err != nil {
-			panic(err)
+		defer func() { _ = logWriter.Close() }()
+
+		if err := logWriter.SetupPipes(cmd); err != nil {
+			log.Fatalf("Failed to setup pipes: %v", err)
 		}
-		writer := bufio.NewWriter(outfile)
-		defer func() { _ = writer.Flush() }()
-		go func() {
-			if _, err := io.Copy(writer, stdoutPipe); err != nil {
-				log.Printf("Error copying stdout: %v", err)
-			}
-		}()
 	} else {
 		cmd.Stdout = &buf
+		cmd.Stderr = &buf
 	}
 
-	err = cmd.Start()
-	if err != nil {
+	// Start the command
+	if err := cmd.Start(); err != nil {
 		log.Fatal(err)
 	}
 
-	// Execute the command
+	// Start copying stdout/stderr to log file if log writer is configured
+	if logWriter != nil {
+		logWriter.Start()
+	}
+
+	// Wait for the command to complete
 	err = cmd.Wait()
+
+	// Wait for all log copying to complete and flush
+	if logWriter != nil {
+		if flushErr := logWriter.Wait(); flushErr != nil {
+			log.Printf("Error flushing log file: %v", flushErr)
+		}
+	}
 
 	// wait if idle is active
 	if *idleSeconds > 0 {

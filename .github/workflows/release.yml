@@ -63,7 +63,7 @@ jobs:
           mkdir -p dist
           for platform in "${platforms[@]}"; do
             IFS='/' read -r os arch <<< "$platform"
-            src="bin/cronmanager-${os}-${arch}"
+            src="bin/cronmgr-${os}-${arch}"
             if [ -f "$src" ]; then
               cp "$src" "dist/"
               echo "✓ Copied: $src -> dist/"
@@ -79,9 +79,9 @@ jobs:
         run: |
           cd dist
           echo "Creating checksums for:"
-          ls -1 cronmanager-*
+          ls -1 cronmgr-*
 
-          for file in cronmanager-*; do
+          for file in cronmgr-*; do
             if [[ -f "$file" && "$file" != *.sha256 ]]; then
               echo "Creating checksum for: $file"
               sha256sum "$file" > "${file}.sha256"

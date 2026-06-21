@@ -40,7 +40,7 @@ func TestEscapeLabelValue(t *testing.T) {
 		{
 			name:     "with all special characters",
 			input:    "test\\path\n\"quoted\"",
-			expected: `test\\\\path\n\"quoted\"`,
+			expected: `test\\path\n\"quoted\"`,
 		},
 		{
 			name:     "empty string",

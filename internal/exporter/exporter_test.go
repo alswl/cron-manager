@@ -138,11 +138,11 @@ func TestSetMetricName(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	if !strings.Contains(contentStr, "# TYPE custom_metric gauge") {
-		t.Errorf("Expected metric type 'custom_metric', got: %s", contentStr)
+	if !strings.Contains(contentStr, "# TYPE custom_metric_running gauge") {
+		t.Errorf("Expected TYPE header 'custom_metric_running', got: %s", contentStr)
 	}
-	if !strings.Contains(contentStr, `custom_metric{name="test_job",dimension="run"} 1`) {
-		t.Errorf("Expected metric name 'custom_metric', got: %s", contentStr)
+	if !strings.Contains(contentStr, `custom_metric_running{name="test_job"} 1`) {
+		t.Errorf("Expected metric 'custom_metric_running', got: %s", contentStr)
 	}
 }
 
@@ -202,8 +202,8 @@ func TestWriteToExporter(t *testing.T) {
 			metric:         "1",
 			initialContent: "",
 			expectedLines: []string{
-				"# TYPE crontab gauge",
-				`crontab{name="test_job",dimension="run"} 1`,
+				"# TYPE crontab_running gauge",
+				`crontab_running{name="test_job"} 1`,
 			},
 		},
 		{
@@ -211,12 +211,12 @@ func TestWriteToExporter(t *testing.T) {
 			jobName: "test_job",
 			label:   "run",
 			metric:  "0",
-			initialContent: `# TYPE crontab gauge
-crontab{name="test_job",dimension="run"} 1
+			initialContent: `# TYPE crontab_running gauge
+crontab_running{name="test_job"} 1
 `,
 			expectedLines: []string{
-				"# TYPE crontab gauge",
-				`crontab{name="test_job",dimension="run"} 0`,
+				"# TYPE crontab_running gauge",
+				`crontab_running{name="test_job"} 0`,
 			},
 		},
 		{
@@ -224,13 +224,14 @@ crontab{name="test_job",dimension="run"} 1
 			jobName: "test_job",
 			label:   "failed",
 			metric:  "0",
-			initialContent: `# TYPE crontab gauge
-crontab{name="test_job",dimension="run"} 1
+			initialContent: `# TYPE crontab_running gauge
+crontab_running{name="test_job"} 1
 `,
 			expectedLines: []string{
-				"# TYPE crontab gauge",
-				`crontab{name="test_job",dimension="run"} 1`,
-				`crontab{name="test_job",dimension="failed"} 0`,
+				"# TYPE crontab_running gauge",
+				`crontab_running{name="test_job"} 1`,
+				"# TYPE crontab_failed gauge",
+				`crontab_failed{name="test_job"} 0`,
 			},
 		},
 		{
@@ -238,13 +239,13 @@ crontab{name="test_job",dimension="run"} 1
 			jobName: "another_job",
 			label:   "run",
 			metric:  "1",
-			initialContent: `# TYPE crontab gauge
-crontab{name="test_job",dimension="run"} 1
+			initialContent: `# TYPE crontab_running gauge
+crontab_running{name="test_job"} 1
 `,
 			expectedLines: []string{
-				"# TYPE crontab gauge",
-				`crontab{name="test_job",dimension="run"} 1`,
-				`crontab{name="another_job",dimension="run"} 1`,
+				"# TYPE crontab_running gauge",
+				`crontab_running{name="test_job"} 1`,
+				`crontab_running{name="another_job"} 1`,
 			},
 		},
 	}
@@ -274,10 +275,10 @@ crontab{name="test_job",dimension="run"} 1
 			contentStr := string(content)
 			lines := strings.Split(strings.TrimSpace(contentStr), "\n")
 
-			// Verify TYPE header exists
+			// Verify TYPE header exists (any metric-specific TYPE header)
 			foundType := false
 			for _, line := range lines {
-				if strings.Contains(line, "# TYPE crontab gauge") {
+				if strings.HasPrefix(line, "# TYPE crontab_") {
 					foundType = true
 					break
 				}
@@ -344,10 +345,10 @@ func TestWriteToExporterFileCreation(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	if !strings.Contains(contentStr, "# TYPE crontab gauge") {
+	if !strings.Contains(contentStr, "# TYPE crontab_running gauge") {
 		t.Errorf("Content should contain TYPE header: %s", contentStr)
 	}
-	if !strings.Contains(contentStr, `crontab{name="test_job",dimension="run"} 1`) {
+	if !strings.Contains(contentStr, `crontab_running{name="test_job"} 1`) {
 		t.Errorf("Content should contain metric: %s", contentStr)
 	}
 }
@@ -388,7 +389,7 @@ func TestWriteToExporterConcurrentWrites(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	if !strings.Contains(contentStr, "# TYPE crontab gauge") {
+	if !strings.Contains(contentStr, "# TYPE crontab_running gauge") {
 		t.Errorf("Content should contain TYPE header: %s", contentStr)
 	}
 }
@@ -416,7 +417,7 @@ func TestWriteToExporterRegexMatching(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	expectedLine := `crontab{name="test-job_with.special_chars",dimension="run"} 1`
+	expectedLine := `crontab_running{name="test-job_with.special_chars"} 1`
 	if !strings.Contains(contentStr, expectedLine) {
 		t.Errorf("Content should contain special job name: %s\nGot: %s", expectedLine, contentStr)
 	}
@@ -448,23 +449,27 @@ func TestWriteToExporterMultipleJobs(t *testing.T) {
 
 	contentStr := string(content)
 
-	// Verify both jobs are present
-	if !strings.Contains(contentStr, `crontab{name="job1",dimension="run"}`) {
+	// Verify both jobs are present under their named metrics
+	if !strings.Contains(contentStr, `crontab_running{name="job1"} 1`) {
 		t.Errorf("Content should contain job1 run metric: %s", contentStr)
 	}
-	if !strings.Contains(contentStr, `crontab{name="job2",dimension="run"}`) {
+	if !strings.Contains(contentStr, `crontab_running{name="job2"} 1`) {
 		t.Errorf("Content should contain job2 run metric: %s", contentStr)
 	}
-	if !strings.Contains(contentStr, `crontab{name="job1",dimension="failed"}`) {
+	if !strings.Contains(contentStr, `crontab_failed{name="job1"} 0`) {
 		t.Errorf("Content should contain job1 failed metric: %s", contentStr)
 	}
-	if !strings.Contains(contentStr, `crontab{name="job2",dimension="failed"}`) {
+	if !strings.Contains(contentStr, `crontab_failed{name="job2"} 0`) {
 		t.Errorf("Content should contain job2 failed metric: %s", contentStr)
 	}
 
-	// Verify only one TYPE header
-	typeCount := strings.Count(contentStr, "# TYPE crontab gauge")
-	if typeCount != 1 {
-		t.Errorf("Should have exactly one TYPE header, got %d", typeCount)
+	// Verify one TYPE header per metric name (running + failed = 2)
+	runningTypeCount := strings.Count(contentStr, "# TYPE crontab_running gauge")
+	failedTypeCount := strings.Count(contentStr, "# TYPE crontab_failed gauge")
+	if runningTypeCount != 1 {
+		t.Errorf("Should have exactly 1 TYPE crontab_running header, got %d", runningTypeCount)
+	}
+	if failedTypeCount != 1 {
+		t.Errorf("Should have exactly 1 TYPE crontab_failed header, got %d", failedTypeCount)
 	}
 }

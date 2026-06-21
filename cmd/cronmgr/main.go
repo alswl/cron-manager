@@ -195,15 +195,18 @@ For more information, visit: https://github.com/alswl/cron-manager
 		logWriter.Start()
 	}
 
-	// Wait for the command to complete
-	err = cmd.Wait()
-
-	// Wait for all log copying to complete and flush
+	// Wait for log copying to complete first — the pipes are closed by the OS
+	// when the child process exits, so the copy goroutines will finish naturally.
+	// Waiting here before cmd.Wait() avoids a race where cmd.Wait() closes the
+	// pipe read ends while the goroutines are still reading from them.
 	if logWriter != nil {
 		if flushErr := logWriter.Wait(); flushErr != nil {
 			log.Printf("Error flushing log file: %v", flushErr)
 		}
 	}
+
+	// Wait for the command to complete and get its exit status
+	err = cmd.Wait()
 
 	// wait if idle is active
 	if *idleSeconds > 0 {

@@ -36,14 +36,15 @@ func TestLogWriter(t *testing.T) {
 	// Start copying
 	lw.Start()
 
-	// Wait for command to complete
-	if err := cmd.Wait(); err != nil {
-		t.Fatalf("Command failed: %v", err)
-	}
-
-	// Wait for all copying to complete
+	// Wait for all copying to complete BEFORE cmd.Wait() — avoids race where
+	// cmd.Wait() closes pipe read ends while goroutines are still reading.
 	if err := lw.Wait(); err != nil {
 		t.Fatalf("Failed to wait for log writer: %v", err)
+	}
+
+	// Wait for command to complete and get exit status
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("Command failed: %v", err)
 	}
 
 	// Read and verify log file content
@@ -58,5 +59,67 @@ func TestLogWriter(t *testing.T) {
 	}
 	if !strings.Contains(contentStr, "stderr message") {
 		t.Errorf("Log file should contain stderr message, got: %s", contentStr)
+	}
+}
+
+// TestLogWriterNoRace runs many iterations with large output to stress-test
+// the Wait ordering. The bug would manifest as:
+//
+//	Error copying stdout: read |0: file already closed
+func TestLogWriterNoRace(t *testing.T) {
+	// Generate a shell command that produces substantial output quickly
+	script := "i=0; while [ $i -lt 1000 ]; do echo \"stdout line $i\"; i=$((i+1)); done; echo 'stderr output' >&2"
+
+	for i := range 100 {
+		tmpDir := t.TempDir()
+		logPath := filepath.Join(tmpDir, "test.log")
+
+		lw, err := NewLogWriter(logPath)
+		if err != nil {
+			t.Fatalf("iteration %d: failed to create LogWriter: %v", i, err)
+		}
+
+		cmd := exec.Command("sh", "-c", script)
+
+		if err := lw.SetupPipes(cmd); err != nil {
+			lw.Close()
+			t.Fatalf("iteration %d: failed to setup pipes: %v", i, err)
+		}
+
+		if err := cmd.Start(); err != nil {
+			lw.Close()
+			t.Fatalf("iteration %d: failed to start command: %v", i, err)
+		}
+
+		lw.Start()
+
+		// The fix: wait for copies BEFORE cmd.Wait()
+		if err := lw.Wait(); err != nil {
+			lw.Close()
+			t.Fatalf("iteration %d: log writer wait failed: %v", i, err)
+		}
+
+		if err := cmd.Wait(); err != nil {
+			lw.Close()
+			t.Fatalf("iteration %d: command failed: %v", i, err)
+		}
+
+		// Verify output is complete (no data loss)
+		content, err := os.ReadFile(logPath)
+		lw.Close()
+		if err != nil {
+			t.Fatalf("iteration %d: failed to read log file: %v", i, err)
+		}
+
+		contentStr := string(content)
+		if !strings.Contains(contentStr, "stdout line 0") {
+			t.Errorf("iteration %d: missing stdout start", i)
+		}
+		if !strings.Contains(contentStr, "stdout line 999") {
+			t.Errorf("iteration %d: missing stdout end", i)
+		}
+		if !strings.Contains(contentStr, "stderr output") {
+			t.Errorf("iteration %d: missing stderr", i)
+		}
 	}
 }
